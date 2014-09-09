@@ -20,9 +20,15 @@ namespace Hangfire.CompositeC1
     {
         public JobList<DeletedJobDto> DeletedJobs(int from, int count)
         {
-            var source = Enumerable.Empty<KeyValuePair<string, DeletedJobDto>>();
-
-            return new JobList<DeletedJobDto>(source);
+            return GetJobs(
+                from,
+                count,
+                DeletedState.StateName,
+                (jsonJob, job, stateData) => new DeletedJobDto
+                {
+                    Job = job,
+                    DeletedAt = JobHelper.DeserializeNullableDateTime(stateData["DeletedAt"])
+                });
         }
 
         public long DeletedListCount()
