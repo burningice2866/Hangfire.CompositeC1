@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
 using System.Linq;
 using System.Threading;
 using System.Transactions;
@@ -17,6 +16,8 @@ namespace Hangfire.CompositeC1
 {
     public class CompositeC1Connection : IStorageConnection
     {
+        private static object FetchJobsLock = new object();
+
         private readonly DataConnection _connection;
 
         public CompositeC1Connection()
@@ -56,19 +57,7 @@ namespace Hangfire.CompositeC1
             server.LastHeartbeat = DateTime.UtcNow;
             server.Data = JobHelper.ToJson(data);
 
-            AddOrUpdate(add, server);
-        }
-
-        private void AddOrUpdate<T>(bool add, T obj) where T : class, IData
-        {
-            if (add)
-            {
-                _connection.Add(obj);
-            }
-            else
-            {
-                _connection.Update(obj);
-            }
+            _connection.AddOrUpdate(add, server);
         }
 
         public string CreateExpiredJob(Job job, IDictionary<string, string> parameters, DateTime createdAt, TimeSpan expireIn)
@@ -122,28 +111,30 @@ namespace Hangfire.CompositeC1
 
             IJobQueue queue;
 
-            do
+            while (true)
             {
                 var timeout = DateTime.UtcNow.Add(TimeSpan.FromMinutes(30).Negate());
 
-                queue = _connection.Get<IJobQueue>()
-                    .Where(q => queues.Contains(q.Queue))
-                    .Where(q => !q.FetchedAt.HasValue || q.FetchedAt.Value < timeout)
-                    .FirstOrDefault();
-
-                if (queue == null)
+                lock (FetchJobsLock)
                 {
-                    cancellationToken.WaitHandle.WaitOne(TimeSpan.FromSeconds(15));
-                    cancellationToken.ThrowIfCancellationRequested();
+                    queue = (from q in _connection.Get<IJobQueue>()
+                             where queues.Contains(q.Queue)
+                                   && (!q.FetchedAt.HasValue || q.FetchedAt.Value < timeout)
+                             orderby q.AddedAt descending
+                             select q).FirstOrDefault();
+
+                    if (queue != null)
+                    {
+                        queue.FetchedAt = DateTime.UtcNow;
+
+                        _connection.Update(queue);
+
+                        break;
+                    }
                 }
-            } while (queue == null);
-
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            queue.FetchedAt = DateTime.UtcNow;
-
-            _connection.Update(queue);
+                cancellationToken.WaitHandle.WaitOne(TimeSpan.FromSeconds(15));
+                cancellationToken.ThrowIfCancellationRequested();
+            }
 
             return new CompositeC1FetchedJob(_connection, queue);
         }
@@ -234,8 +225,8 @@ namespace Hangfire.CompositeC1
             Verify.ArgumentNotNull(jobId, "jobId");
 
             var state = (from job in _connection.Get<IJob>().Where(j => j.Id == Guid.Parse(jobId))
-                join s in _connection.Get<IState>() on job.StateId equals s.Id
-                select s).SingleOrDefault();
+                         join s in _connection.Get<IState>() on job.StateId equals s.Id
+                         select s).SingleOrDefault();
 
             if (state == null)
             {
@@ -305,13 +296,14 @@ namespace Hangfire.CompositeC1
 
                 parameter = _connection.CreateNew<IJobParameter>();
 
+                parameter.Id = Guid.NewGuid();
                 parameter.JobId = Guid.Parse(id);
                 parameter.Name = name;
             }
 
             parameter.Value = value;
 
-            AddOrUpdate(add, parameter);
+            _connection.AddOrUpdate(add, parameter);
         }
 
         public void SetRangeInHash(string key, IEnumerable<KeyValuePair<string, string>> keyValuePairs)
@@ -338,7 +330,7 @@ namespace Hangfire.CompositeC1
 
                     hash.Value = kvp.Value;
 
-                    AddOrUpdate(add, hash);
+                    _connection.AddOrUpdate(add, hash);
                 }
 
                 transaction.Complete();

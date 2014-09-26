@@ -16,7 +16,6 @@ namespace Hangfire.CompositeC1.Types
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]
         [ImmutableFieldId("d3d38a38-a369-4b6d-ac71-5868ae76bcee")]
-        [FunctionBasedNewInstanceDefaultFieldValue("<f:function name=\"Composite.Utils.Guid.NewGuid\" xmlns:f=\"http://www.composite.net/ns/function/1.0\" />")]
         Guid Id { get; set; }
 
         [StoreFieldType(PhysicalStoreFieldType.Guid)]

@@ -16,7 +16,6 @@ namespace Hangfire.CompositeC1.Types
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]
         [ImmutableFieldId("c1886cec-6dc0-4b48-9bcc-102b408fa1ba")]
-        [FunctionBasedNewInstanceDefaultFieldValue("<f:function name=\"Composite.Utils.Guid.NewGuid\" xmlns:f=\"http://www.composite.net/ns/function/1.0\" />")]
         Guid Id { get; set; }
 
         [StoreFieldType(PhysicalStoreFieldType.Guid)]
@@ -26,6 +25,10 @@ namespace Hangfire.CompositeC1.Types
         [StoreFieldType(PhysicalStoreFieldType.String, 20)]
         [ImmutableFieldId("63e1d780-3747-4be3-a2ba-1e1c905da76c")]
         string Queue { get; set; }
+
+        [StoreFieldType(PhysicalStoreFieldType.DateTime)]
+        [ImmutableFieldId("bce85320-fc2d-449d-9e04-8c8a426a3e1b")]
+        DateTime AddedAt { get; set; }
 
         [StoreFieldType(PhysicalStoreFieldType.DateTime, IsNullable = true)]
         [ImmutableFieldId("60bae343-69b6-4538-a0ef-1852de98649e")]

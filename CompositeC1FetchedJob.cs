@@ -16,21 +16,19 @@ namespace Hangfire.CompositeC1
         private bool _removedFromQueue;
         private bool _requeued;
 
-        public string JobId
-        {
-            get;
-            private set;
-        }
+        public Guid Id { get; private  set; }
+        public string JobId { get; private set; }
 
         public CompositeC1FetchedJob(DataConnection connection, IJobQueue queue)
         {
             _connection = connection;
+            Id = queue.Id;
             JobId = queue.JobId.ToString();
         }
 
         public void RemoveFromQueue()
         {
-            var queue = _connection.Get<IJobQueue>().SingleOrDefault(q => q.Id == Guid.Parse(JobId));
+            var queue = _connection.Get<IJobQueue>().SingleOrDefault(q => q.Id == Id);
             if (queue != null)
             {
                 _connection.Delete(queue);

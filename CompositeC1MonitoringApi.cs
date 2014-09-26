@@ -276,7 +276,7 @@ namespace Hangfire.CompositeC1
             return GetNumberOfJobsByStateName(SucceededState.StateName);
         }
 
-        private Dictionary<DateTime, long> GetHourlyTimelineStats(string type)
+        private static Dictionary<DateTime, long> GetHourlyTimelineStats(string type)
         {
             var endDate = DateTime.UtcNow;
             var dates = new List<DateTime>();
@@ -319,7 +319,7 @@ namespace Hangfire.CompositeC1
                 valuesMap = data.Get<ICounter>()
                     .Where(c => keys.Contains(c.Key))
                     .GroupBy(c => c.Key)
-                    .ToDictionary(o => o.Key, o => o.Count());
+                    .ToDictionary(o => o.Key, o => o.First().Value);
             }
 
             foreach (var key in keys.Where(key => !valuesMap.ContainsKey(key)))

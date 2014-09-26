@@ -61,6 +61,7 @@
     <Compile Include="CompositeC1MonitoringApi.cs" />
     <Compile Include="CompositeC1Storage.cs" />
     <Compile Include="CompositeC1WriteOnlyTransaction.cs" />
+    <Compile Include="DataConnectionExtensions.cs" />
     <Compile Include="Entities\EnqueuedAndFetchedCountDto.cs" />
     <Compile Include="Entities\JsonJob.cs" />
     <Compile Include="Entities\ServerData.cs" />

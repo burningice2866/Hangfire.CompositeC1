@@ -24,6 +24,7 @@ namespace Hangfire.CompositeC1
             {
                 var stateData = data.CreateNew<IState>();
 
+                stateData.Id = Guid.NewGuid();
                 stateData.JobId = Guid.Parse(jobId);
                 stateData.Name = state.Name;
                 stateData.Reason = state.Reason;
@@ -40,7 +41,9 @@ namespace Hangfire.CompositeC1
             {
                 var queueData = data.CreateNew<IJobQueue>();
 
+                queueData.Id = Guid.NewGuid();
                 queueData.Queue = queue;
+                queueData.AddedAt = DateTime.UtcNow;
                 queueData.JobId = Guid.Parse(jobId);
 
                 data.Add(queueData);
@@ -65,20 +68,14 @@ namespace Hangfire.CompositeC1
 
                     set = data.CreateNew<ISet>();
 
+                    set.Id = Guid.NewGuid();
                     set.Key = key;
                     set.Value = value;
                 }
 
                 set.Score = (long)score;
 
-                if (add)
-                {
-                    data.Add(set);
-                }
-                else
-                {
-                    data.Update(set);
-                }
+                data.AddOrUpdate(add, set);
             });
         }
 
@@ -117,20 +114,25 @@ namespace Hangfire.CompositeC1
         {
             QueueCommand(data =>
             {
-                var nextValue = 1;
+                var add = false;
 
-                var highestCounter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
-                if (highestCounter != null)
+                var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
+                if (counter != null)
                 {
-                    nextValue = nextValue + 1;
+                    counter.Value = counter.Value + 1;
+                }
+                else
+                {
+                    counter = data.CreateNew<ICounter>();
+
+                    counter.Id = Guid.NewGuid();
+                    counter.Key = key;
+                    counter.Value = 1;
+
+                    add = true;
                 }
 
-                var counter = data.CreateNew<ICounter>();
-
-                counter.Key = key;
-                counter.Value = nextValue;
-
-                data.Add(counter);
+                data.AddOrUpdate(add, counter);
             });
         }
 
@@ -138,21 +140,27 @@ namespace Hangfire.CompositeC1
         {
             QueueCommand(data =>
             {
-                var nextValue = 1;
+                var add = false;
 
-                var highestCounter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
-                if (highestCounter != null)
+                var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
+                if (counter != null)
                 {
-                    nextValue = nextValue + 1;
+                    counter.Value = counter.Value + 1;
+                }
+                else
+                {
+                    counter = data.CreateNew<ICounter>();
+
+                    counter.Id = Guid.NewGuid();
+                    counter.Key = key;
+                    counter.Value = 1;
+
+                    add = true;
                 }
 
-                var counter = data.CreateNew<ICounter>();
-
-                counter.Key = key;
-                counter.Value = nextValue;
                 counter.ExpireAt = DateTime.UtcNow.Add(expireIn);
 
-                data.Add(counter);
+                data.AddOrUpdate(add, counter);
             });
         }
 
@@ -160,21 +168,25 @@ namespace Hangfire.CompositeC1
         {
             QueueCommand(data =>
             {
-                var nextValue = 1;
+                var add = false;
 
-                var highestCounter =
-                    data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
-                if (highestCounter != null)
+                var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
+                if (counter != null)
                 {
-                    nextValue = nextValue - 1;
+                    counter.Value = counter.Value - 1;
+                }
+                else
+                {
+                    counter = data.CreateNew<ICounter>();
+
+                    counter.Id = Guid.NewGuid();
+                    counter.Key = key;
+                    counter.Value = 0;
+
+                    add = true;
                 }
 
-                var counter = data.CreateNew<ICounter>();
-
-                counter.Key = key;
-                counter.Value = nextValue;
-
-                data.Add(counter);
+                data.AddOrUpdate(add, counter);
             });
         }
 
@@ -182,21 +194,27 @@ namespace Hangfire.CompositeC1
         {
             QueueCommand(data =>
             {
-                var nextValue = 1;
+                var add = false;
 
-                var highestCounter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
-                if (highestCounter != null)
+                var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
+                if (counter != null)
                 {
-                    nextValue = nextValue - 1;
+                    counter.Value = counter.Value - 1;
+                }
+                else
+                {
+                    counter = data.CreateNew<ICounter>();
+
+                    counter.Id = Guid.NewGuid();
+                    counter.Key = key;
+                    counter.Value = 0;
+
+                    add = true;
                 }
 
-                var counter = data.CreateNew<ICounter>();
-
-                counter.Key = key;
-                counter.Value = nextValue;
                 counter.ExpireAt = DateTime.UtcNow.Add(expireIn);
 
-                data.Add(counter);
+                data.AddOrUpdate(add, counter);
             });
         }
 
@@ -311,20 +329,14 @@ namespace Hangfire.CompositeC1
 
                         hash = data.CreateNew<IHash>();
 
+                        hash.Id = Guid.NewGuid();
                         hash.Key = key;
                         hash.Field = local.Key;
                     }
 
                     hash.Value = local.Value;
 
-                    if (add)
-                    {
-                        data.Add(hash);
-                    }
-                    else
-                    {
-                        data.Update(hash);
-                    }
+                    data.AddOrUpdate(add, hash);
                 });
             }
         }
