@@ -324,6 +324,7 @@ namespace Hangfire.CompositeC1
 
                         hash = _connection.CreateNew<IHash>();
 
+                        hash.Id = Guid.NewGuid();
                         hash.Key = key;
                         hash.Field = kvp.Key;
                     }
