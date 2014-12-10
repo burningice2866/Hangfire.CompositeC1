@@ -27,7 +27,7 @@ namespace Hangfire.CompositeC1.Types
         [ImmutableFieldId("3746075b-e55b-4ba7-92cf-15fa0ed27556")]
         string Name { get; set; }
 
-        [StoreFieldType(PhysicalStoreFieldType.String, 100)]
+        [StoreFieldType(PhysicalStoreFieldType.String, 100, IsNullable = true)]
         [ImmutableFieldId("227d918c-61da-4512-bc64-b9a5d0cdd313")]
         string Reason { get; set; }
 

@@ -18,11 +18,11 @@ namespace Hangfire.CompositeC1.Types
         [ImmutableFieldId("d3d38a38-a369-4b6d-ac71-5868ae76bcee")]
         Guid Id { get; set; }
 
-        [StoreFieldType(PhysicalStoreFieldType.Guid)]
+        [StoreFieldType(PhysicalStoreFieldType.Guid, IsNullable = true)]
         [ImmutableFieldId("1bc9b011-5097-43f1-99ac-3cfcc12cd2f6")]
-        Guid StateId { get; set; }
+        Guid? StateId { get; set; }
 
-        [StoreFieldType(PhysicalStoreFieldType.String, 20)]
+        [StoreFieldType(PhysicalStoreFieldType.String, 20, IsNullable = true)]
         [ImmutableFieldId("6ee6ea7c-1f44-4705-a4c7-6b242a070243")]
         string StateName { get; set; }
 

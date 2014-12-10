@@ -103,8 +103,8 @@ namespace Hangfire.CompositeC1
 
                 Func<string, int> getCountIfExists = name => states.ContainsKey(name) ? states[name] : 0;
 
-                var succeded = data.Get<ICounter>().Where(c => c.Key == "stats:succeeded").Sum(c => c.Value);
-                var deleted = data.Get<ICounter>().Where(c => c.Key == "stats:deleted").Sum(c => c.Value);
+                var succeded = data.Get<ICounter>().Where(c => c.Key == "stats:succeeded").Sum(c => (int?)c.Value);
+                var deleted = data.Get<ICounter>().Where(c => c.Key == "stats:deleted").Sum(c => (int?)c.Value);
                 var recurringJobs = data.Get<ISet>().Count(c => c.Key == "recurring-jobs");
                 var servers = data.Get<IServer>().Count();
 
@@ -117,8 +117,8 @@ namespace Hangfire.CompositeC1
 
                     Servers = servers,
 
-                    Succeeded = succeded,
-                    Deleted = deleted,
+                    Succeeded = succeded.HasValue ? succeded.Value : 0,
+                    Deleted = deleted.HasValue ? deleted.Value : 0,
                     Recurring = recurringJobs
                 };
 

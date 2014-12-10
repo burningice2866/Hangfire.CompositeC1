@@ -36,9 +36,9 @@
     <Reference Include="Composite">
       <HintPath>packages\CompositeC1.Core.4.2.1\lib\net45\Composite.dll</HintPath>
     </Reference>
-    <Reference Include="Hangfire.Core, Version=1.1.1.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="Hangfire.Core, Version=1.2.2.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>packages\HangFire.Core.1.1.1\lib\net45\Hangfire.Core.dll</HintPath>
+      <HintPath>packages\HangFire.Core.1.2.2\lib\net45\Hangfire.Core.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
