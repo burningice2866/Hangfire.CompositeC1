@@ -276,10 +276,10 @@ namespace Hangfire.CompositeC1
 
             QueueCommand(data =>
             {
-                var hash = data.Get<IHash>().SingleOrDefault(j => j.Key == key);
-                if (hash != null)
+                var hash = data.Get<IHash>().Where(j => j.Key == key);
+                if (hash.Any())
                 {
-                    data.Delete(hash);
+                    data.Delete<IHash>(hash);
                 }
             });
         }
