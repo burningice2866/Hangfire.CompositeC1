@@ -1,18 +1,13 @@
 ﻿using System;
 
 using Composite.Data;
-using Composite.Data.Hierarchy;
-using Composite.Data.Hierarchy.DataAncestorProviders;
 
 namespace Hangfire.CompositeC1.Types
 {
-    [AutoUpdateble]
-    [DataScope(DataScopeIdentifier.PublicName)]
-    [DataAncestorProvider(typeof(NoAncestorDataAncestorProvider))]
     [ImmutableTypeId("9d87193f-6ae6-4bfb-9aec-fbc0506bd5c1")]
     [Title("Job")]
     [KeyPropertyName("Id")]
-    public interface IJob : IData
+    public interface IJob : IExpirable
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]
         [ImmutableFieldId("d3d38a38-a369-4b6d-ac71-5868ae76bcee")]
@@ -37,9 +32,5 @@ namespace Hangfire.CompositeC1.Types
         [StoreFieldType(PhysicalStoreFieldType.DateTime)]
         [ImmutableFieldId("7acc6212-2d37-4041-859b-56121bc246ab")]
         DateTime CreatedAt { get; set; }
-
-        [StoreFieldType(PhysicalStoreFieldType.DateTime, IsNullable = true)]
-        [ImmutableFieldId("e2ceb0d4-e341-498d-bbcc-f44b16372848")]
-        DateTime? ExpireAt { get; set; }
     }
 }

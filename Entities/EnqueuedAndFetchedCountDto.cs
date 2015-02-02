@@ -1,5 +1,4 @@
-﻿
-namespace Hangfire.CompositeC1.Entities
+﻿namespace Hangfire.CompositeC1.Entities
 {
     public class EnqueuedAndFetchedCountDto
     {

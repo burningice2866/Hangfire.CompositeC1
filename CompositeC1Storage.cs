@@ -1,4 +1,7 @@
-﻿using Hangfire.Storage;
+﻿using System.Collections.Generic;
+
+using Hangfire.Server;
+using Hangfire.Storage;
 
 namespace Hangfire.CompositeC1
 {
@@ -12,6 +15,11 @@ namespace Hangfire.CompositeC1
         public override IMonitoringApi GetMonitoringApi()
         {
             return new CompositeC1MonitoringApi();
+        }
+
+        public override IEnumerable<IServerComponent> GetComponents()
+        {
+            return new[] { new ExpirationManager() };
         }
     }
 }

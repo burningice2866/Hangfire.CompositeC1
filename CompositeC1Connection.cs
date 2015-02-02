@@ -16,7 +16,7 @@ namespace Hangfire.CompositeC1
 {
     public class CompositeC1Connection : IStorageConnection
     {
-        private static object FetchJobsLock = new object();
+        private static readonly object FetchJobsLock = new object();
 
         private readonly DataConnection _connection;
 

@@ -1,18 +1,13 @@
 ﻿using System;
 
 using Composite.Data;
-using Composite.Data.Hierarchy;
-using Composite.Data.Hierarchy.DataAncestorProviders;
 
 namespace Hangfire.CompositeC1.Types
 {
-    [AutoUpdateble]
-    [DataScope(DataScopeIdentifier.PublicName)]
-    [DataAncestorProvider(typeof(NoAncestorDataAncestorProvider))]
     [ImmutableTypeId("51e6f50e-d797-46f9-b28e-002e9c824e45")]
     [Title("Set")]
     [KeyPropertyName("Id")]
-    public interface ISet : IData
+    public interface ISet : IExpirable
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]
         [ImmutableFieldId("437e4527-7990-4f0e-b408-76dbafe0cd70")]
@@ -29,9 +24,5 @@ namespace Hangfire.CompositeC1.Types
         [StoreFieldType(PhysicalStoreFieldType.String, 256)]
         [ImmutableFieldId("768ef921-3a2a-4ded-9d60-675da5fbcb7a")]
         string Value { get; set; }
-
-        [StoreFieldType(PhysicalStoreFieldType.DateTime)]
-        [ImmutableFieldId("4752a7eb-b8d1-4e38-87e2-6790830ea0eb")]
-        DateTime ExpireAt { get; set; }
     }
 }
