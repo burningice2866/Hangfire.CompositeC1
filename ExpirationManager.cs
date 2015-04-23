@@ -18,7 +18,7 @@ namespace Hangfire.CompositeC1
 
         private static readonly Type[] Types =
         {
-            typeof(ICounter),
+            typeof(IAggregatedCounter),
             typeof(IJob),
             typeof(IList),
             typeof(ISet),
@@ -26,8 +26,6 @@ namespace Hangfire.CompositeC1
         };
 
         private readonly TimeSpan _checkInterval;
-
-        public ExpirationManager() : this(TimeSpan.FromHours(1)) { }
 
         public ExpirationManager(TimeSpan checkInterval)
         {

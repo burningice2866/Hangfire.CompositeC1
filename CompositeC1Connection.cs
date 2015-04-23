@@ -14,7 +14,7 @@ using Hangfire.Storage;
 
 namespace Hangfire.CompositeC1
 {
-    public class CompositeC1Connection : IStorageConnection
+    public class CompositeC1Connection : JobStorageConnection
     {
         private static readonly object FetchJobsLock = new object();
 
@@ -25,12 +25,12 @@ namespace Hangfire.CompositeC1
             _connection = new DataConnection();
         }
 
-        public IDisposable AcquireDistributedLock(string resource, TimeSpan timeout)
+        public override IDisposable AcquireDistributedLock(string resource, TimeSpan timeout)
         {
             return SimpleLock.AcquireLock(resource, timeout);
         }
 
-        public void AnnounceServer(string serverId, ServerContext context)
+        public override void AnnounceServer(string serverId, ServerContext context)
         {
             Verify.ArgumentNotNull(serverId, "serverId");
             Verify.ArgumentNotNull(context, "context");
@@ -60,7 +60,7 @@ namespace Hangfire.CompositeC1
             _connection.AddOrUpdate(add, server);
         }
 
-        public string CreateExpiredJob(Job job, IDictionary<string, string> parameters, DateTime createdAt, TimeSpan expireIn)
+        public override string CreateExpiredJob(Job job, IDictionary<string, string> parameters, DateTime createdAt, TimeSpan expireIn)
         {
             Verify.ArgumentNotNull(job, "job");
             Verify.ArgumentNotNull(parameters, "parameters");
@@ -99,12 +99,12 @@ namespace Hangfire.CompositeC1
             return jobData.Id.ToString();
         }
 
-        public IWriteOnlyTransaction CreateWriteTransaction()
+        public override IWriteOnlyTransaction CreateWriteTransaction()
         {
             return new CompositeC1WriteOnlyTransaction();
         }
 
-        public IFetchedJob FetchNextJob(string[] queues, CancellationToken cancellationToken)
+        public override IFetchedJob FetchNextJob(string[] queues, CancellationToken cancellationToken)
         {
             Verify.ArgumentNotNull(queues, "queues");
             Verify.ArgumentCondition(queues.Length > 0, "queues", "Queues cannot be empty");
@@ -117,7 +117,9 @@ namespace Hangfire.CompositeC1
 
                 lock (FetchJobsLock)
                 {
-                    queue = (from q in _connection.Get<IJobQueue>()
+                    var jobQueues = _connection.Get<IJobQueue>();
+
+                    queue = (from q in jobQueues
                              where queues.Contains(q.Queue)
                                    && (!q.FetchedAt.HasValue || q.FetchedAt.Value < timeout)
                              orderby q.AddedAt descending
@@ -132,6 +134,7 @@ namespace Hangfire.CompositeC1
                         break;
                     }
                 }
+
                 cancellationToken.WaitHandle.WaitOne(TimeSpan.FromSeconds(15));
                 cancellationToken.ThrowIfCancellationRequested();
             }
@@ -139,7 +142,7 @@ namespace Hangfire.CompositeC1
             return new CompositeC1FetchedJob(_connection, queue);
         }
 
-        public Dictionary<string, string> GetAllEntriesFromHash(string key)
+        public override Dictionary<string, string> GetAllEntriesFromHash(string key)
         {
             Verify.ArgumentNotNull(key, "key");
 
@@ -148,7 +151,7 @@ namespace Hangfire.CompositeC1
             return hashes.Count == 0 ? null : hashes;
         }
 
-        public HashSet<string> GetAllItemsFromSet(string key)
+        public override HashSet<string> GetAllItemsFromSet(string key)
         {
             Verify.ArgumentNotNull(key, "key");
 
@@ -157,7 +160,7 @@ namespace Hangfire.CompositeC1
             return new HashSet<string>(values);
         }
 
-        public string GetFirstByLowestScoreFromSet(string key, double fromScore, double toScore)
+        public override string GetFirstByLowestScoreFromSet(string key, double fromScore, double toScore)
         {
             Verify.ArgumentNotNull(key, "key");
 
@@ -175,11 +178,17 @@ namespace Hangfire.CompositeC1
             return set == null ? null : set.Value;
         }
 
-        public JobData GetJobData(string jobId)
+        public override JobData GetJobData(string jobId)
         {
             Verify.ArgumentNotNull(jobId, "jobId");
 
-            var jobData = _connection.Get<IJob>().SingleOrDefault(j => j.Id == Guid.Parse(jobId));
+            Guid id;
+            if (!Guid.TryParse(jobId, out id))
+            {
+                return null;
+            }
+
+            var jobData = _connection.Get<IJob>().SingleOrDefault(j => j.Id == id);
             if (jobData == null)
             {
                 return null;
@@ -210,7 +219,7 @@ namespace Hangfire.CompositeC1
             };
         }
 
-        public string GetJobParameter(string id, string name)
+        public override string GetJobParameter(string id, string name)
         {
             Verify.ArgumentNotNull(id, "id");
             Verify.ArgumentNotNull(name, "name");
@@ -220,12 +229,36 @@ namespace Hangfire.CompositeC1
             return job == null ? null : job.Value;
         }
 
-        public StateData GetStateData(string jobId)
+        public override long GetListCount(string key)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            return _connection.Get<IList>().Count(l => l.Key == key);
+        }
+
+        public override long GetSetCount(string key)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            return _connection.Get<ISet>().Count(s => s.Key == key);
+        }
+
+        public override StateData GetStateData(string jobId)
         {
             Verify.ArgumentNotNull(jobId, "jobId");
 
-            var state = (from job in _connection.Get<IJob>().Where(j => j.Id == Guid.Parse(jobId))
-                         join s in _connection.Get<IState>() on job.StateId equals s.Id
+            Guid id;
+            if (!Guid.TryParse(jobId, out id))
+            {
+                return null;
+            }
+
+            var jobs = _connection.Get<IJob>();
+            var states = _connection.Get<IState>();
+
+            var state = (from job in jobs
+                         where job.Id == id
+                         join s in states on job.StateId equals s.Id
                          select s).SingleOrDefault();
 
             if (state == null)
@@ -237,11 +270,109 @@ namespace Hangfire.CompositeC1
             {
                 Name = state.Name,
                 Reason = state.Reason,
-                Data = JobHelper.FromJson<Dictionary<string, string>>(state.Data)
+                Data = new Dictionary<string, string>(
+                    JobHelper.FromJson<Dictionary<string, string>>(state.Data),
+                    StringComparer.OrdinalIgnoreCase)
             };
         }
 
-        public void Heartbeat(string serverId)
+        public override string GetValueFromHash(string key, string name)
+        {
+            Verify.ArgumentNotNull(key, "key");
+            Verify.ArgumentNotNull(name, "name");
+
+            return _connection
+                .Get<IHash>()
+                .Where(h => h.Key == key && h.Field == name)
+                .Select(h => h.Value).SingleOrDefault();
+        }
+
+        public override List<string> GetAllItemsFromList(string key)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            return _connection
+                .Get<IList>()
+                .Where(l => l.Key == key)
+                .OrderBy(l => l.Id)
+                .Select(l => l.Value)
+                .ToList();
+        }
+
+        public override long GetCounter(string key)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            return _connection.GetCombinedCounter(key) ?? 0;
+        }
+
+        public override long GetHashCount(string key)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            return _connection.Get<IHash>().Count(h => h.Key == key);
+        }
+
+        public override TimeSpan GetHashTtl(string key)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            var date = _connection.Get<IHash>().Select(h => h.ExpireAt).Min();
+
+            return date.HasValue ? date.Value - DateTime.UtcNow : TimeSpan.FromSeconds(-1);
+        }
+
+        public override TimeSpan GetListTtl(string key)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            var date = _connection.Get<IList>().Select(l => l.ExpireAt).Min();
+
+            return date.HasValue ? date.Value - DateTime.UtcNow : TimeSpan.FromSeconds(-1);
+        }
+
+        public override TimeSpan GetSetTtl(string key)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            var date = _connection.Get<ISet>().Select(l => l.ExpireAt).Min();
+
+            return date.HasValue ? date.Value - DateTime.UtcNow : TimeSpan.FromSeconds(-1);
+        }
+
+        public override List<string> GetRangeFromList(string key, int startingFrom, int endingAt)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            var count = endingAt - startingFrom;
+
+            return _connection
+                .Get<IList>()
+                .Where(l => l.Key == key)
+                .OrderBy(l => l.Id)
+                .Skip(startingFrom)
+                .Take(count)
+                .Select(l => l.Value)
+                .ToList();
+        }
+
+        public override List<string> GetRangeFromSet(string key, int startingFrom, int endingAt)
+        {
+            Verify.ArgumentNotNull(key, "key");
+
+            var count = endingAt - startingFrom;
+
+            return _connection
+                .Get<ISet>()
+                .Where(s => s.Key == key)
+                .OrderBy(s => s.Id)
+                .Skip(startingFrom)
+                .Take(count)
+                .Select(s => s.Value)
+                .ToList();
+        }
+
+        public override void Heartbeat(string serverId)
         {
             Verify.ArgumentNotNull(serverId, "serverId");
 
@@ -256,7 +387,7 @@ namespace Hangfire.CompositeC1
             _connection.Update(server);
         }
 
-        public void RemoveServer(string serverId)
+        public override void RemoveServer(string serverId)
         {
             Verify.ArgumentNotNull(serverId, "serverId");
 
@@ -267,7 +398,7 @@ namespace Hangfire.CompositeC1
             }
         }
 
-        public int RemoveTimedOutServers(TimeSpan timeOut)
+        public override int RemoveTimedOutServers(TimeSpan timeOut)
         {
             if (timeOut.Duration() != timeOut)
             {
@@ -282,7 +413,7 @@ namespace Hangfire.CompositeC1
             return servers.Count;
         }
 
-        public void SetJobParameter(string id, string name, string value)
+        public override void SetJobParameter(string id, string name, string value)
         {
             Verify.ArgumentNotNull(id, "id");
             Verify.ArgumentNotNull(name, "name");
@@ -306,7 +437,7 @@ namespace Hangfire.CompositeC1
             _connection.AddOrUpdate(add, parameter);
         }
 
-        public void SetRangeInHash(string key, IEnumerable<KeyValuePair<string, string>> keyValuePairs)
+        public override void SetRangeInHash(string key, IEnumerable<KeyValuePair<string, string>> keyValuePairs)
         {
             Verify.ArgumentNotNull(key, "key");
             Verify.ArgumentNotNull(keyValuePairs, "keyValuePairs");
@@ -338,7 +469,7 @@ namespace Hangfire.CompositeC1
             }
         }
 
-        public void Dispose()
+        public override void Dispose()
         {
             _connection.Dispose();
         }

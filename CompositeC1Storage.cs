@@ -7,6 +7,15 @@ namespace Hangfire.CompositeC1
 {
     public class CompositeC1Storage : JobStorage
     {
+        private readonly CompositeC1StorageOptions _options;
+
+        public CompositeC1Storage() : this(new CompositeC1StorageOptions()) { }
+
+        public CompositeC1Storage(CompositeC1StorageOptions options)
+        {
+            _options = options;
+        }
+
         public override IStorageConnection GetConnection()
         {
             return new CompositeC1Connection();
@@ -19,7 +28,11 @@ namespace Hangfire.CompositeC1
 
         public override IEnumerable<IServerComponent> GetComponents()
         {
-            return new[] { new ExpirationManager() };
+            return new IServerComponent[]
+            {
+                new ExpirationManager(_options.JobExpirationCheckInterval),
+                new CountersAggregator(_options.CountersAggregateInterval)
+            };
         }
     }
 }

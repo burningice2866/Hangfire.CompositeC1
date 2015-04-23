@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 
+using Composite;
 using Composite.Data;
 
 using Hangfire.Common;
@@ -103,8 +103,9 @@ namespace Hangfire.CompositeC1
 
                 Func<string, int> getCountIfExists = name => states.ContainsKey(name) ? states[name] : 0;
 
-                var succeded = data.Get<ICounter>().Where(c => c.Key == "stats:succeeded").Sum(c => (int?)c.Value);
-                var deleted = data.Get<ICounter>().Where(c => c.Key == "stats:deleted").Sum(c => (int?)c.Value);
+                var succeded = data.GetCombinedCounter("stats:succeeded");
+                var deleted = data.GetCombinedCounter("stats:deleted");
+
                 var recurringJobs = data.Get<ISet>().Count(c => c.Key == "recurring-jobs");
                 var servers = data.Get<IServer>().Count();
 
@@ -138,29 +139,38 @@ namespace Hangfire.CompositeC1
 
         public JobDetailsDto JobDetails(string jobId)
         {
+            Verify.ArgumentNotNull(jobId, "jobId");
+
+            Guid id;
+            if (!Guid.TryParse(jobId, out id))
+            {
+                return null;
+            }
+
             using (var data = new DataConnection())
             {
-                var g = Guid.Parse(jobId);
-
-                var job = data.Get<IJob>().SingleOrDefault(j => j.Id == g);
+                var job = data.Get<IJob>().SingleOrDefault(j => j.Id == id);
                 if (job == null)
                 {
                     return null;
                 }
 
-                var jobParameters = data.Get<IJobParameter>().Where(p => p.Id == g).ToDictionary(p => p.Name, p => p.Value);
+                var jobParameters = data.Get<IJobParameter>().Where(p => p.Id == id).ToDictionary(p => p.Name, p => p.Value);
 
-                var state = data.Get<IState>().Where(s => s.Id == g).ToList().Select(x => new StateHistoryDto
+                var state = data.Get<IState>().Where(s => s.Id == id).ToList().Select(x => new StateHistoryDto
                 {
                     StateName = x.Name,
                     CreatedAt = x.CreatedAt,
                     Reason = x.Reason,
-                    Data = JobHelper.FromJson<Dictionary<string, string>>(x.Data)
+                    Data = new Dictionary<string, string>(
+                        JobHelper.FromJson<Dictionary<string, string>>(x.Data),
+                        StringComparer.OrdinalIgnoreCase)
                 }).ToList();
 
                 return new JobDetailsDto
                 {
                     CreatedAt = job.CreatedAt,
+                    ExpireAt = job.ExpireAt,
                     Job = DeserializeJob(job.InvocationData, job.Arguments),
                     History = state,
                     Properties = jobParameters
@@ -191,23 +201,20 @@ namespace Hangfire.CompositeC1
             {
                 var queuesData = data.Get<IJobQueue>().ToList();
                 var queues = queuesData.GroupBy(q => q.Queue).ToDictionary(q => q.Key, q => q.Count());
-                var result = new List<QueueWithTopEnqueuedJobsDto>(queues.Keys.Count);
 
-                foreach (var kvp in queues)
-                {
-                    var enqueuedJobIds = QueueApi.GetEnqueuedJobIds(kvp.Key, 0, 5);
-                    var counters = QueueApi.GetEnqueuedAndFetchedCount(kvp.Key);
-
-                    result.Add(new QueueWithTopEnqueuedJobsDto
+                var query =
+                    from kvp in queues
+                    let enqueuedJobIds = QueueApi.GetEnqueuedJobIds(kvp.Key, 0, 5)
+                    let counters = QueueApi.GetEnqueuedAndFetchedCount(kvp.Key)
+                    select new QueueWithTopEnqueuedJobsDto
                     {
                         Name = kvp.Key,
                         Length = counters.EnqueuedCount,
                         Fetched = counters.FetchedCount,
                         FirstJobs = EnqueuedJobs(enqueuedJobIds)
-                    });
-                }
+                    };
 
-                return result;
+                return query.ToList();
             }
         }
 
@@ -230,26 +237,24 @@ namespace Hangfire.CompositeC1
 
         public IList<ServerDto> Servers()
         {
-            var result = new List<ServerDto>();
-
             using (var data = new DataConnection())
             {
-                foreach (var server in data.Get<IServer>())
-                {
-                    var serverData = JobHelper.FromJson<ServerData>(server.Data);
+                var servers = data.Get<IServer>();
 
-                    result.Add(new ServerDto
+                var query =
+                    from server in servers
+                    let serverData = JobHelper.FromJson<ServerData>(server.Data)
+                    select new ServerDto
                     {
                         Name = server.Id,
                         Heartbeat = server.LastHeartbeat,
                         Queues = serverData.Queues,
                         StartedAt = serverData.StartedAt.HasValue ? serverData.StartedAt.Value : DateTime.MinValue,
                         WorkersCount = serverData.WorkerCount
-                    });
-                }
-            }
+                    };
 
-            return result;
+                return query.ToList();
+            }
         }
 
         public IDictionary<DateTime, long> SucceededByDatesCount()
@@ -264,6 +269,7 @@ namespace Hangfire.CompositeC1
                 (jsonJob, job, stateData) => new SucceededJobDto
                 {
                     Job = job,
+                    Result = stateData.ContainsKey("Result") ? stateData["Result"] : null,
                     TotalDuration = stateData.ContainsKey("PerformanceDuration") && stateData.ContainsKey("Latency")
                         ? (long?)long.Parse(stateData["PerformanceDuration"]) + (long?)long.Parse(stateData["Latency"])
                         : null,
@@ -284,58 +290,51 @@ namespace Hangfire.CompositeC1
             for (var i = 0; i < 24; i++)
             {
                 dates.Add(endDate);
+
                 endDate = endDate.AddHours(-1);
             }
 
-            var keys = dates.Select(x => String.Format("stats:{0}:{1}", type, x.ToString("yyyy-MM-dd-HH"))).ToList();
+            var keyMap = dates.ToDictionary(x => String.Format("stats:{0}:{1}", type, x.ToString("yyyy-MM-dd-HH")), x => x);
 
-            return MapKeysToDateTimeLongs(dates, keys);
+            return GetTimelineStats(keyMap);
         }
 
         public Dictionary<DateTime, long> GetTimelineStats(string type)
         {
             var endDate = DateTime.UtcNow.Date;
-            var startDate = endDate.AddDays(-7);
             var dates = new List<DateTime>();
 
-            while (startDate <= endDate)
+            for (var i = 0; i < 7; i++)
             {
                 dates.Add(endDate);
+
                 endDate = endDate.AddDays(-1);
             }
 
-            var stringDates = dates.Select(x => x.ToString("yyyy-MM-dd")).ToList();
-            var keys = stringDates.Select(x => String.Format("stats:{0}:{1}", type, x)).ToList();
+            var keyMap = dates.ToDictionary(x => String.Format("stats:{0}:{1}", type, x.ToString("yyyy-MM-dd")), x => x);
 
-            return MapKeysToDateTimeLongs(dates, keys);
+            return GetTimelineStats(keyMap);
         }
 
-        private static Dictionary<DateTime, long> MapKeysToDateTimeLongs(List<DateTime> dates, List<string> keys)
+        private static Dictionary<DateTime, long> GetTimelineStats(IDictionary<string, DateTime> keyMap)
         {
-            IDictionary<string, int> valuesMap;
+            IDictionary<string, long> valuesMap;
 
             using (var data = new DataConnection())
             {
-                valuesMap = data.Get<ICounter>()
-                    .Where(c => keys.Contains(c.Key))
-                    .GroupBy(c => c.Key)
-                    .ToDictionary(o => o.Key, o => o.First().Value);
+                var counters = data.Get<IAggregatedCounter>();
+
+                valuesMap = (from c in counters
+                             where keyMap.Keys.Contains(c.Key)
+                             select c).ToDictionary(o => o.Key, o => o.Value);
             }
 
-            foreach (var key in keys.Where(key => !valuesMap.ContainsKey(key)))
+            foreach (var key in keyMap.Keys.Where(key => !valuesMap.ContainsKey(key)))
             {
                 valuesMap.Add(key, 0);
             }
 
-            var result = new Dictionary<DateTime, long>();
-            for (var i = 0; i < dates.Count; i++)
-            {
-                var value = valuesMap[valuesMap.Keys.ElementAt(i)];
-
-                result.Add(dates[i], value);
-            }
-
-            return result;
+            return keyMap.ToDictionary(k => k.Value, k => valuesMap[k.Key]);
         }
 
         private static JobList<FetchedJobDto> FetchedJobs(IEnumerable<Guid> jobIds)
@@ -360,23 +359,16 @@ namespace Hangfire.CompositeC1
                                  StateReason = s.Reason,
                                  StateData = s.Data,
                                  StateName = j.StateName
-                             }).ToList();
+                             })
+                    .AsEnumerable()
+                    .Select(job => new KeyValuePair<string, FetchedJobDto>(job.Id, new FetchedJobDto
+                    {
+                        Job = DeserializeJob(job.InvocationData, job.Arguments),
+                        State = job.StateName,
+                        FetchedAt = job.FetchedAt
+                    }));
 
-                var result = new List<KeyValuePair<string, FetchedJobDto>>(query.Count);
-
-                foreach (var job in query)
-                {
-                    result.Add(new KeyValuePair<string, FetchedJobDto>(
-                        job.Id,
-                        new FetchedJobDto
-                        {
-                            Job = DeserializeJob(job.InvocationData, job.Arguments),
-                            State = job.StateName,
-                            FetchedAt = job.FetchedAt
-                        }));
-                }
-
-                return new JobList<FetchedJobDto>(result);
+                return new JobList<FetchedJobDto>(query);
             }
         }
 
@@ -460,19 +452,16 @@ namespace Hangfire.CompositeC1
         }
 
         private static JobList<TDto> DeserializeJobs<TDto>(
-            IList<JsonJob> jobs,
+            IEnumerable<JsonJob> jobs,
             Func<JsonJob, Job, Dictionary<string, string>, TDto> selector)
         {
-            var result = new List<KeyValuePair<string, TDto>>(jobs.Count);
-
-            foreach (var job in jobs)
-            {
-                var stateData = JobHelper.FromJson<Dictionary<string, string>>(job.StateData);
-                var dto = selector(job, DeserializeJob(job.InvocationData, job.Arguments), stateData);
-
-                result.Add(new KeyValuePair<string, TDto>(
-                    job.Id.ToString(CultureInfo.InvariantCulture), dto));
-            }
+            var result = from job in jobs
+                         let deserializedData = JobHelper.FromJson<Dictionary<string, string>>(job.StateData)
+                         let stateData = deserializedData != null ?
+                             new Dictionary<string, string>(deserializedData, StringComparer.OrdinalIgnoreCase)
+                             : null
+                         let dto = selector(job, DeserializeJob(job.InvocationData, job.Arguments), stateData)
+                         select new KeyValuePair<string, TDto>(job.Id, dto);
 
             return new JobList<TDto>(result);
         }
