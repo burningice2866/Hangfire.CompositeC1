@@ -14,7 +14,7 @@ namespace Hangfire.CompositeC1.Types
     [KeyPropertyName("Id")]
     public interface IServer : IData
     {
-        [StoreFieldType(PhysicalStoreFieldType.String, 50)]
+        [StoreFieldType(PhysicalStoreFieldType.String, 100)]
         [ImmutableFieldId("4bad37ac-7d41-46a3-9fc3-2ae51d64b3c0")]
         string Id { get; set; }
 

@@ -22,7 +22,7 @@ namespace Hangfire.CompositeC1.Types
         [ImmutableFieldId("eaa59ab3-9fa8-4584-b0e7-11adc0ec789e")]
         Guid JobId { get; set; }
 
-        [StoreFieldType(PhysicalStoreFieldType.String, 20)]
+        [StoreFieldType(PhysicalStoreFieldType.String, 50)]
         [ImmutableFieldId("63e1d780-3747-4be3-a2ba-1e1c905da76c")]
         string Queue { get; set; }
 
