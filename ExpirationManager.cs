@@ -2,17 +2,21 @@
 using System.Linq;
 using System.Threading;
 
-using Composite.Core;
+using Composite;
 using Composite.Core.Threading;
 using Composite.Data;
 
 using Hangfire.CompositeC1.Types;
+using Hangfire.Logging;
 using Hangfire.Server;
 
 namespace Hangfire.CompositeC1
 {
     public class ExpirationManager : IServerComponent
     {
+        private static readonly ILog Logger = LogProvider.GetCurrentClassLogger();
+
+        private static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(5);
         private static readonly TimeSpan DelayBetweenPasses = TimeSpan.FromSeconds(1);
         private const int NumberOfRecordsInSinglePass = 1000;
 
@@ -25,10 +29,16 @@ namespace Hangfire.CompositeC1
             typeof(IHash)
         };
 
+        private readonly CompositeC1Storage _storage;
         private readonly TimeSpan _checkInterval;
 
-        public ExpirationManager(TimeSpan checkInterval)
+        public ExpirationManager(CompositeC1Storage storage) : this(storage, TimeSpan.FromHours(1)) { }
+
+        public ExpirationManager(CompositeC1Storage storage, TimeSpan checkInterval)
         {
+            Verify.ArgumentNotNull(storage, "storage");
+
+            _storage = storage;
             _checkInterval = checkInterval;
         }
 
@@ -38,33 +48,38 @@ namespace Hangfire.CompositeC1
 
             using (ThreadDataManager.EnsureInitialize())
             {
+                var connection = (CompositeC1Connection)_storage.GetConnection();
+
                 foreach (var t in Types)
                 {
-                    Log.LogVerbose("Hangfire", String.Format("Removing outdated records from type '{0}'", t.Name));
+                    Logger.DebugFormat("Removing outdated records from type '{0}'", t.Name);
 
                     int removedCount;
 
                     do
                     {
-                        var table = DataFacade.GetData(t).Cast<IExpirable>();
-                        var data = (from d in table
-                                    where d.ExpireAt < now
-                                    orderby d.ExpireAt
-                                    select d).Take(NumberOfRecordsInSinglePass).ToList();
-
-                        removedCount = data.Count;
-
-                        if (removedCount <= 0)
+                        using (connection.AcquireDistributedLock("locks:expirationmanager", DefaultLockTimeout))
                         {
-                            continue;
+                            var table = connection.Get<IExpirable>(t);
+                            var data = (from d in table
+                                        where d.ExpireAt < now
+                                        orderby d.ExpireAt
+                                        select d).Take(NumberOfRecordsInSinglePass).ToList();
+
+                            removedCount = data.Count;
+
+                            if (removedCount <= 0)
+                            {
+                                continue;
+                            }
+
+                            Logger.TraceFormat("Removed '{0}' outdated records from type '{1}'", removedCount, t.Name);
+
+                            connection.Delete<IData>(data);
+
+                            cancellationToken.WaitHandle.WaitOne(DelayBetweenPasses);
+                            cancellationToken.ThrowIfCancellationRequested();
                         }
-
-                        Log.LogVerbose("Hangfire", String.Format("Removed '{0}' outdated records from type '{1}'", removedCount, t.Name));
-
-                        DataFacade.Delete<IData>(data);
-
-                        cancellationToken.WaitHandle.WaitOne(DelayBetweenPasses);
-                        cancellationToken.ThrowIfCancellationRequested();
                     } while (removedCount != 0);
                 }
             }
@@ -74,7 +89,7 @@ namespace Hangfire.CompositeC1
 
         public override string ToString()
         {
-            return "Composite C1 Records Expiration Manager";
+            return GetType().ToString();
         }
     }
 }

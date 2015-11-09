@@ -36,9 +36,9 @@
     <Reference Include="Composite">
       <HintPath>packages\CompositeC1.Core.4.2.1\lib\net45\Composite.dll</HintPath>
     </Reference>
-    <Reference Include="Hangfire.Core, Version=1.4.1.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>packages\HangFire.Core.1.4.1\lib\net45\Hangfire.Core.dll</HintPath>
-      <Private>True</Private>
+    <Reference Include="Hangfire.Core, Version=1.4.7.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>packages\Hangfire.Core.1.4.7\lib\net45\Hangfire.Core.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -53,7 +53,6 @@
     <Compile Include="CompositeC1StorageOptions.cs" />
     <Compile Include="CompositeC1WriteOnlyTransaction.cs" />
     <Compile Include="CountersAggregator.cs" />
-    <Compile Include="DataConnectionExtensions.cs" />
     <Compile Include="Entities\EnqueuedAndFetchedCountDto.cs" />
     <Compile Include="Entities\JsonJob.cs" />
     <Compile Include="Entities\ServerData.cs" />

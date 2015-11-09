@@ -4,7 +4,6 @@ using System.Linq;
 using System.Transactions;
 
 using Composite;
-using Composite.Data;
 
 using Hangfire.Common;
 using Hangfire.CompositeC1.Types;
@@ -16,7 +15,14 @@ namespace Hangfire.CompositeC1
 {
     public class CompositeC1WriteOnlyTransaction : IWriteOnlyTransaction
     {
-        private readonly IList<Action<DataConnection>> _queue = new List<Action<DataConnection>>();
+        private readonly IList<Action<CompositeC1Connection>> _queue = new List<Action<CompositeC1Connection>>();
+
+        private readonly CompositeC1Connection _connection;
+
+        public CompositeC1WriteOnlyTransaction(CompositeC1Connection connection)
+        {
+            _connection = connection;
+        }
 
         public void AddJobState(string jobId, IHangfireState state)
         {
@@ -77,23 +83,6 @@ namespace Hangfire.CompositeC1
 
                 data.AddOrUpdate(add, set);
             });
-        }
-
-        public void Commit()
-        {
-            using (var transaction = new TransactionScope())
-            {
-                using (var data = new DataConnection())
-                {
-                    foreach (var cmd in _queue)
-                    {
-                        cmd(data);
-                    }
-
-                    _queue.Clear();
-                    transaction.Complete();
-                }
-            }
         }
 
         public void ExpireJob(string jobId, TimeSpan expireIn)
@@ -346,11 +335,25 @@ namespace Hangfire.CompositeC1
 
         }
 
-        public void Dispose() { }
+        public void Commit()
+        {
+            using (var transaction = new TransactionScope())
+            {
+                foreach (var cmd in _queue)
+                {
+                    cmd(_connection);
+                }
 
-        private void QueueCommand(Action<DataConnection> command)
+                _queue.Clear();
+                transaction.Complete();
+            }
+        }
+
+        private void QueueCommand(Action<CompositeC1Connection> command)
         {
             _queue.Add(command);
         }
+
+        public void Dispose() { }
     }
 }

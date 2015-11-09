@@ -12,6 +12,8 @@ using Hangfire.CompositeC1.Types;
 using Hangfire.Server;
 using Hangfire.Storage;
 
+using IList = Hangfire.CompositeC1.Types.IList;
+
 namespace Hangfire.CompositeC1
 {
     public class CompositeC1Connection : JobStorageConnection
@@ -37,12 +39,12 @@ namespace Hangfire.CompositeC1
 
             var add = false;
 
-            var server = _connection.Get<IServer>().SingleOrDefault(s => s.Id == serverId);
+            var server = Get<IServer>().SingleOrDefault(s => s.Id == serverId);
             if (server == null)
             {
                 add = true;
 
-                server = _connection.CreateNew<IServer>();
+                server = CreateNew<IServer>();
 
                 server.Id = serverId;
             }
@@ -57,7 +59,7 @@ namespace Hangfire.CompositeC1
             server.LastHeartbeat = DateTime.UtcNow;
             server.Data = JobHelper.ToJson(data);
 
-            _connection.AddOrUpdate(add, server);
+            AddOrUpdate(add, server);
         }
 
         public override string CreateExpiredJob(Job job, IDictionary<string, string> parameters, DateTime createdAt, TimeSpan expireIn)
@@ -67,7 +69,7 @@ namespace Hangfire.CompositeC1
 
             var invocationData = InvocationData.Serialize(job);
 
-            var jobData = _connection.CreateNew<IJob>();
+            var jobData = CreateNew<IJob>();
 
             jobData.Id = Guid.NewGuid();
             jobData.InvocationData = JobHelper.ToJson(invocationData);
@@ -75,7 +77,7 @@ namespace Hangfire.CompositeC1
             jobData.CreatedAt = createdAt;
             jobData.ExpireAt = createdAt.Add(expireIn);
 
-            _connection.Add(jobData);
+            Add(jobData);
 
             if (parameters.Count > 0)
             {
@@ -83,7 +85,7 @@ namespace Hangfire.CompositeC1
 
                 foreach (var kvp in parameters)
                 {
-                    var parametersData = _connection.CreateNew<IJobParameter>();
+                    var parametersData = CreateNew<IJobParameter>();
 
                     parametersData.Id = Guid.NewGuid();
                     parametersData.JobId = jobData.Id;
@@ -93,7 +95,7 @@ namespace Hangfire.CompositeC1
                     list.Add(parametersData);
                 }
 
-                _connection.Add<IJobParameter>(list);
+                Add<IJobParameter>(list);
             }
 
             return jobData.Id.ToString();
@@ -101,7 +103,7 @@ namespace Hangfire.CompositeC1
 
         public override IWriteOnlyTransaction CreateWriteTransaction()
         {
-            return new CompositeC1WriteOnlyTransaction();
+            return new CompositeC1WriteOnlyTransaction(this);
         }
 
         public override IFetchedJob FetchNextJob(string[] queues, CancellationToken cancellationToken)
@@ -117,7 +119,7 @@ namespace Hangfire.CompositeC1
 
                 lock (FetchJobsLock)
                 {
-                    var jobQueues = _connection.Get<IJobQueue>();
+                    var jobQueues = Get<IJobQueue>();
 
                     queue = (from q in jobQueues
                              where queues.Contains(q.Queue)
@@ -129,7 +131,7 @@ namespace Hangfire.CompositeC1
                     {
                         queue.FetchedAt = DateTime.UtcNow;
 
-                        _connection.Update(queue);
+                        Update(queue);
 
                         break;
                     }
@@ -139,14 +141,14 @@ namespace Hangfire.CompositeC1
                 cancellationToken.ThrowIfCancellationRequested();
             }
 
-            return new CompositeC1FetchedJob(_connection, queue);
+            return new CompositeC1FetchedJob(this, queue);
         }
 
         public override Dictionary<string, string> GetAllEntriesFromHash(string key)
         {
             Verify.ArgumentNotNull(key, "key");
 
-            var hashes = _connection.Get<IHash>().Where(h => h.Key == key).ToDictionary(h => h.Field, h => h.Value);
+            var hashes = Get<IHash>().Where(h => h.Key == key).ToDictionary(h => h.Field, h => h.Value);
 
             return hashes.Count == 0 ? null : hashes;
         }
@@ -155,7 +157,7 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNull(key, "key");
 
-            var values = _connection.Get<ISet>().Where(s => s.Key == key).Select(s => s.Value);
+            var values = Get<ISet>().Where(s => s.Key == key).Select(s => s.Value);
 
             return new HashSet<string>(values);
         }
@@ -169,8 +171,7 @@ namespace Hangfire.CompositeC1
                 throw new ArgumentException("The `toScore` value must be higher or equal to the `fromScore` value.");
             }
 
-            var set =
-                _connection.Get<ISet>()
+            var set = Get<ISet>()
                     .Where(s => s.Key == key && s.Score >= fromScore && s.Score <= toScore)
                     .OrderByDescending(s => s.Score)
                     .FirstOrDefault();
@@ -188,7 +189,7 @@ namespace Hangfire.CompositeC1
                 return null;
             }
 
-            var jobData = _connection.Get<IJob>().SingleOrDefault(j => j.Id == id);
+            var jobData = Get<IJob>().SingleOrDefault(j => j.Id == id);
             if (jobData == null)
             {
                 return null;
@@ -224,7 +225,7 @@ namespace Hangfire.CompositeC1
             Verify.ArgumentNotNull(id, "id");
             Verify.ArgumentNotNull(name, "name");
 
-            var job = _connection.Get<IJobParameter>().SingleOrDefault(p => p.JobId == Guid.Parse(id) && p.Name == name);
+            var job = Get<IJobParameter>().SingleOrDefault(p => p.JobId == Guid.Parse(id) && p.Name == name);
 
             return job == null ? null : job.Value;
         }
@@ -233,14 +234,14 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNull(key, "key");
 
-            return _connection.Get<IList>().Count(l => l.Key == key);
+            return Get<IList>().Count(l => l.Key == key);
         }
 
         public override long GetSetCount(string key)
         {
             Verify.ArgumentNotNull(key, "key");
 
-            return _connection.Get<ISet>().Count(s => s.Key == key);
+            return Get<ISet>().Count(s => s.Key == key);
         }
 
         public override StateData GetStateData(string jobId)
@@ -253,8 +254,8 @@ namespace Hangfire.CompositeC1
                 return null;
             }
 
-            var jobs = _connection.Get<IJob>();
-            var states = _connection.Get<IState>();
+            var jobs = Get<IJob>();
+            var states = Get<IState>();
 
             var state = (from job in jobs
                          where job.Id == id
@@ -281,8 +282,7 @@ namespace Hangfire.CompositeC1
             Verify.ArgumentNotNull(key, "key");
             Verify.ArgumentNotNull(name, "name");
 
-            return _connection
-                .Get<IHash>()
+            return Get<IHash>()
                 .Where(h => h.Key == key && h.Field == name)
                 .Select(h => h.Value).SingleOrDefault();
         }
@@ -291,8 +291,7 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNull(key, "key");
 
-            return _connection
-                .Get<IList>()
+            return Get<IList>()
                 .Where(l => l.Key == key)
                 .OrderBy(l => l.Id)
                 .Select(l => l.Value)
@@ -303,21 +302,21 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNull(key, "key");
 
-            return _connection.GetCombinedCounter(key) ?? 0;
+            return GetCombinedCounter(key) ?? 0;
         }
 
         public override long GetHashCount(string key)
         {
             Verify.ArgumentNotNull(key, "key");
 
-            return _connection.Get<IHash>().Count(h => h.Key == key);
+            return Get<IHash>().Count(h => h.Key == key);
         }
 
         public override TimeSpan GetHashTtl(string key)
         {
             Verify.ArgumentNotNull(key, "key");
 
-            var date = _connection.Get<IHash>().Select(h => h.ExpireAt).Min();
+            var date = Get<IHash>().Select(h => h.ExpireAt).Min();
 
             return date.HasValue ? date.Value - DateTime.UtcNow : TimeSpan.FromSeconds(-1);
         }
@@ -326,7 +325,7 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNull(key, "key");
 
-            var date = _connection.Get<IList>().Select(l => l.ExpireAt).Min();
+            var date = Get<IList>().Select(l => l.ExpireAt).Min();
 
             return date.HasValue ? date.Value - DateTime.UtcNow : TimeSpan.FromSeconds(-1);
         }
@@ -335,7 +334,7 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNull(key, "key");
 
-            var date = _connection.Get<ISet>().Select(l => l.ExpireAt).Min();
+            var date = Get<ISet>().Select(l => l.ExpireAt).Min();
 
             return date.HasValue ? date.Value - DateTime.UtcNow : TimeSpan.FromSeconds(-1);
         }
@@ -346,8 +345,7 @@ namespace Hangfire.CompositeC1
 
             var count = endingAt - startingFrom;
 
-            return _connection
-                .Get<IList>()
+            return Get<IList>()
                 .Where(l => l.Key == key)
                 .OrderBy(l => l.Id)
                 .Skip(startingFrom)
@@ -362,8 +360,7 @@ namespace Hangfire.CompositeC1
 
             var count = endingAt - startingFrom;
 
-            return _connection
-                .Get<ISet>()
+            return Get<ISet>()
                 .Where(s => s.Key == key)
                 .OrderBy(s => s.Id)
                 .Skip(startingFrom)
@@ -376,7 +373,7 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNull(serverId, "serverId");
 
-            var server = _connection.Get<IServer>().SingleOrDefault(s => s.Id == serverId);
+            var server = Get<IServer>().SingleOrDefault(s => s.Id == serverId);
             if (server == null)
             {
                 return;
@@ -384,17 +381,17 @@ namespace Hangfire.CompositeC1
 
             server.LastHeartbeat = DateTime.UtcNow;
 
-            _connection.Update(server);
+            Update(server);
         }
 
         public override void RemoveServer(string serverId)
         {
             Verify.ArgumentNotNull(serverId, "serverId");
 
-            var server = _connection.Get<IServer>().SingleOrDefault(s => s.Id == serverId);
+            var server = Get<IServer>().SingleOrDefault(s => s.Id == serverId);
             if (server != null)
             {
-                _connection.Delete(server);
+                Delete(server);
             }
         }
 
@@ -406,9 +403,9 @@ namespace Hangfire.CompositeC1
             }
 
             var timeOutAt = DateTime.UtcNow.Add(timeOut.Negate());
-            var servers = _connection.Get<IServer>().Where(s => s.LastHeartbeat < timeOutAt).ToList();
+            var servers = Get<IServer>().Where(s => s.LastHeartbeat < timeOutAt).ToList();
 
-            _connection.Delete<IServer>(servers);
+            Delete<IServer>(servers);
 
             return servers.Count;
         }
@@ -420,12 +417,12 @@ namespace Hangfire.CompositeC1
 
             var add = false;
 
-            var parameter = _connection.Get<IJobParameter>().SingleOrDefault(s => s.JobId == Guid.Parse(id) && s.Name == name);
+            var parameter = Get<IJobParameter>().SingleOrDefault(s => s.JobId == Guid.Parse(id) && s.Name == name);
             if (parameter == null)
             {
                 add = true;
 
-                parameter = _connection.CreateNew<IJobParameter>();
+                parameter = CreateNew<IJobParameter>();
 
                 parameter.Id = Guid.NewGuid();
                 parameter.JobId = Guid.Parse(id);
@@ -434,7 +431,7 @@ namespace Hangfire.CompositeC1
 
             parameter.Value = value;
 
-            _connection.AddOrUpdate(add, parameter);
+            AddOrUpdate(add, parameter);
         }
 
         public override void SetRangeInHash(string key, IEnumerable<KeyValuePair<string, string>> keyValuePairs)
@@ -448,12 +445,12 @@ namespace Hangfire.CompositeC1
                 {
                     var add = false;
 
-                    var hash = _connection.Get<IHash>().SingleOrDefault(h => h.Key == key && h.Field == kvp.Key);
+                    var hash = Get<IHash>().SingleOrDefault(h => h.Key == key && h.Field == kvp.Key);
                     if (hash == null)
                     {
                         add = true;
 
-                        hash = _connection.CreateNew<IHash>();
+                        hash = CreateNew<IHash>();
 
                         hash.Id = Guid.NewGuid();
                         hash.Key = key;
@@ -462,11 +459,71 @@ namespace Hangfire.CompositeC1
 
                     hash.Value = kvp.Value;
 
-                    _connection.AddOrUpdate(add, hash);
+                    AddOrUpdate(add, hash);
                 }
 
                 transaction.Complete();
             }
+        }
+
+        public long? GetCombinedCounter(string key)
+        {
+            var counters = Get<ICounter>().Where(c => c.Key == key).Select(c => (long?)c.Value);
+            var aggregatedCounters = Get<IAggregatedCounter>().Where(c => c.Key == key).Select(c => (long?)c.Value);
+
+            return counters.Concat(aggregatedCounters).Sum(v => v);
+        }
+
+        public T CreateNew<T>() where T : class, IData
+        {
+            return _connection.CreateNew<T>();
+        }
+
+        public void AddOrUpdate<T>(bool add, T item) where T : class, IData
+        {
+            if (add)
+            {
+                Add(item);
+            }
+            else
+            {
+                Update(item);
+            }
+        }
+
+        public void Add<T>(T item) where T : class, IData
+        {
+            _connection.Add(item);
+        }
+
+        public void Add<T>(IEnumerable<T> items) where T : class, IData
+        {
+            _connection.Add(items);
+        }
+
+        public IQueryable<T> Get<T>() where T : class, IData
+        {
+            return _connection.Get<T>();
+        }
+
+        public IQueryable<T> Get<T>(Type t) where T : class, IData
+        {
+            return DataFacade.GetData(t).Cast<T>();
+        }
+
+        public void Update<T>(T item) where T : class, IData
+        {
+            _connection.Update(item);
+        }
+
+        public void Delete<T>(T item) where T : class, IData
+        {
+            _connection.Delete<IData>(item);
+        }
+
+        public void Delete<T>(IEnumerable<T> items) where T : class, IData
+        {
+            _connection.Delete<IData>(items);
         }
 
         public override void Dispose()

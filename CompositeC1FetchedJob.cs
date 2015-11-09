@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Linq;
 
-using Composite.Data;
+using Composite;
 
 using Hangfire.CompositeC1.Types;
 using Hangfire.Storage;
@@ -10,7 +10,7 @@ namespace Hangfire.CompositeC1
 {
     public class CompositeC1FetchedJob : IFetchedJob
     {
-        private readonly DataConnection _connection;
+        private readonly CompositeC1Connection _connection;
 
         private bool _disposed;
         private bool _removedFromQueue;
@@ -19,8 +19,11 @@ namespace Hangfire.CompositeC1
         public Guid Id { get; private  set; }
         public string JobId { get; private set; }
 
-        public CompositeC1FetchedJob(DataConnection connection, IJobQueue queue)
+        public CompositeC1FetchedJob(CompositeC1Connection connection, IJobQueue queue)
         {
+            Verify.ArgumentNotNull(connection, "connection");
+            Verify.ArgumentNotNull(queue, "queue");
+
             _connection = connection;
             Id = queue.Id;
             JobId = queue.JobId.ToString();

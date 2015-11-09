@@ -2,6 +2,8 @@
 using System.Collections.Concurrent;
 using System.Threading;
 
+using Composite;
+
 namespace Hangfire.CompositeC1
 {
     public class SimpleLock : IDisposable
@@ -12,6 +14,13 @@ namespace Hangfire.CompositeC1
 
         private SimpleLock(string resource, TimeSpan timeout)
         {
+            Verify.ArgumentNotNullOrEmpty(resource, "resource");
+
+            if (timeout.TotalSeconds > Int32.MaxValue)
+            {
+                throw new ArgumentException("The timeout specified is greater than Int32.MaxValue when expressed as seconds.", "timeout");
+            }
+
             _lock = Locks.GetOrAdd(resource, new object());
 
             Monitor.TryEnter(_lock, timeout);

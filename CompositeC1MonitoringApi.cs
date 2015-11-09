@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 
 using Composite;
-using Composite.Data;
 
 using Hangfire.Common;
 using Hangfire.CompositeC1.Entities;
@@ -18,6 +17,13 @@ namespace Hangfire.CompositeC1
 {
     public class CompositeC1MonitoringApi : IMonitoringApi
     {
+        private readonly CompositeC1Storage _storage;
+
+        public CompositeC1MonitoringApi(CompositeC1Storage storage)
+        {
+            _storage = storage;
+        }
+
         public JobList<DeletedJobDto> DeletedJobs(int from, int count)
         {
             return GetJobs(
@@ -38,7 +44,7 @@ namespace Hangfire.CompositeC1
 
         public long EnqueuedCount(string queue)
         {
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 return data.Get<IJobQueue>().Count(q => q.Queue == queue && !q.FetchedAt.HasValue);
             }
@@ -46,7 +52,7 @@ namespace Hangfire.CompositeC1
 
         public JobList<EnqueuedJobDto> EnqueuedJobs(string queue, int from, int perPage)
         {
-            var enqueuedJobIds = QueueApi.GetEnqueuedJobIds(queue, from, perPage);
+            var enqueuedJobIds = QueueApi.GetEnqueuedJobIds(_storage, queue, from, perPage);
 
             return EnqueuedJobs(enqueuedJobIds);
         }
@@ -78,7 +84,7 @@ namespace Hangfire.CompositeC1
 
         public long FetchedCount(string queue)
         {
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 return data.Get<IJobQueue>().Count(q => q.Queue == queue && q.FetchedAt.HasValue);
             }
@@ -86,14 +92,14 @@ namespace Hangfire.CompositeC1
 
         public JobList<FetchedJobDto> FetchedJobs(string queue, int from, int perPage)
         {
-            var fetchedJobIds = QueueApi.GetFetechedJobIds(queue, from, perPage);
+            var fetchedJobIds = QueueApi.GetFetchedJobIds(_storage, queue, from, perPage);
 
             return FetchedJobs(fetchedJobIds);
         }
 
         public StatisticsDto GetStatistics()
         {
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var states =
                     data.Get<IJob>()
@@ -147,7 +153,7 @@ namespace Hangfire.CompositeC1
                 return null;
             }
 
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var job = data.Get<IJob>().SingleOrDefault(j => j.Id == id);
                 if (job == null)
@@ -197,15 +203,15 @@ namespace Hangfire.CompositeC1
 
         public IList<QueueWithTopEnqueuedJobsDto> Queues()
         {
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var queuesData = data.Get<IJobQueue>().ToList();
                 var queues = queuesData.GroupBy(q => q.Queue).ToDictionary(q => q.Key, q => q.Count());
 
                 var query =
                     from kvp in queues
-                    let enqueuedJobIds = QueueApi.GetEnqueuedJobIds(kvp.Key, 0, 5)
-                    let counters = QueueApi.GetEnqueuedAndFetchedCount(kvp.Key)
+                    let enqueuedJobIds = QueueApi.GetEnqueuedJobIds(_storage, kvp.Key, 0, 5)
+                    let counters = QueueApi.GetEnqueuedAndFetchedCount(_storage, kvp.Key)
                     select new QueueWithTopEnqueuedJobsDto
                     {
                         Name = kvp.Key,
@@ -237,7 +243,7 @@ namespace Hangfire.CompositeC1
 
         public IList<ServerDto> Servers()
         {
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var servers = data.Get<IServer>();
 
@@ -282,7 +288,7 @@ namespace Hangfire.CompositeC1
             return GetNumberOfJobsByStateName(SucceededState.StateName);
         }
 
-        private static Dictionary<DateTime, long> GetHourlyTimelineStats(string type)
+        private Dictionary<DateTime, long> GetHourlyTimelineStats(string type)
         {
             var endDate = DateTime.UtcNow;
             var dates = new List<DateTime>();
@@ -316,11 +322,11 @@ namespace Hangfire.CompositeC1
             return GetTimelineStats(keyMap);
         }
 
-        private static Dictionary<DateTime, long> GetTimelineStats(IDictionary<string, DateTime> keyMap)
+        private Dictionary<DateTime, long> GetTimelineStats(IDictionary<string, DateTime> keyMap)
         {
             IDictionary<string, long> valuesMap;
 
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var counters = data.Get<IAggregatedCounter>();
 
@@ -337,9 +343,9 @@ namespace Hangfire.CompositeC1
             return keyMap.ToDictionary(k => k.Value, k => valuesMap[k.Key]);
         }
 
-        private static JobList<FetchedJobDto> FetchedJobs(IEnumerable<Guid> jobIds)
+        private JobList<FetchedJobDto> FetchedJobs(IEnumerable<Guid> jobIds)
         {
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var jobs = data.Get<IJob>();
                 var states = data.Get<IState>();
@@ -372,9 +378,9 @@ namespace Hangfire.CompositeC1
             }
         }
 
-        private static JobList<EnqueuedJobDto> EnqueuedJobs(IEnumerable<Guid> jobIds)
+        private JobList<EnqueuedJobDto> EnqueuedJobs(IEnumerable<Guid> jobIds)
         {
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var jobs = data.Get<IJob>();
                 var states = data.Get<IState>();
@@ -407,13 +413,13 @@ namespace Hangfire.CompositeC1
             }
         }
 
-        private static JobList<TDto> GetJobs<TDto>(
+        private JobList<TDto> GetJobs<TDto>(
             int from,
             int count,
             string stateName,
             Func<JsonJob, Job, Dictionary<string, string>, TDto> selector)
         {
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var jobs = data.Get<IJob>().Where(j => j.StateName == stateName).OrderByDescending(j => j.CreatedAt);
                 var states = data.Get<IState>();
@@ -466,9 +472,9 @@ namespace Hangfire.CompositeC1
             return new JobList<TDto>(result);
         }
 
-        private static long GetNumberOfJobsByStateName(string stateName)
+        private long GetNumberOfJobsByStateName(string stateName)
         {
-            using (var data = new DataConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var count = data.Get<IJob>().Count(j => j.StateName == stateName);
 

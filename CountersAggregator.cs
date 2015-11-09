@@ -2,8 +2,6 @@
 using System.Linq;
 using System.Threading;
 
-using Composite.Data;
-
 using Hangfire.CompositeC1.Types;
 using Hangfire.Server;
 
@@ -14,20 +12,22 @@ namespace Hangfire.CompositeC1
         private const int NumberOfRecordsInSinglePass = 1000;
         private static readonly TimeSpan DelayBetweenPasses = TimeSpan.FromSeconds(1);
 
+        private readonly CompositeC1Storage _storage;
         private readonly TimeSpan _interval;
 
-        public CountersAggregator(TimeSpan interval)
+        public CountersAggregator(CompositeC1Storage storage, TimeSpan interval)
         {
+            _storage = storage;
             _interval = interval;
         }
 
         public void Execute(CancellationToken cancellationToken)
         {
-            var removedCount = 0;
+            int removedCount;
 
             do
             {
-                using (var data = new DataConnection())
+                using (var data = (CompositeC1Connection)_storage.GetConnection())
                 {
                     var counters = data.Get<ICounter>().Take(NumberOfRecordsInSinglePass).ToList();
 
@@ -84,7 +84,7 @@ namespace Hangfire.CompositeC1
 
         public override string ToString()
         {
-            return "Counter Table Aggregator";
+            return GetType().ToString();
         }
     }
 }

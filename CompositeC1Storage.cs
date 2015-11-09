@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 
+using Hangfire.Logging;
 using Hangfire.Server;
 using Hangfire.Storage;
 
@@ -23,16 +24,26 @@ namespace Hangfire.CompositeC1
 
         public override IMonitoringApi GetMonitoringApi()
         {
-            return new CompositeC1MonitoringApi();
+            return new CompositeC1MonitoringApi(this);
         }
 
         public override IEnumerable<IServerComponent> GetComponents()
         {
             return new IServerComponent[]
             {
-                new ExpirationManager(_options.JobExpirationCheckInterval),
-                new CountersAggregator(_options.CountersAggregateInterval)
+                new ExpirationManager(this, _options.JobExpirationCheckInterval),
+                new CountersAggregator(this, _options.CountersAggregateInterval)
             };
+        }
+
+        public override void WriteOptionsToLog(ILog logger)
+        {
+            logger.Info("Using the following options for Composite C1 job storage:");
+
+            logger.InfoFormat("    Job expiration check interval: {0}.", _options.JobExpirationCheckInterval);
+            logger.InfoFormat("    Counters aggregate interval: {0}.", _options.CountersAggregateInterval);
+
+            base.WriteOptionsToLog(logger);
         }
     }
 }
