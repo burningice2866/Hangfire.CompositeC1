@@ -2,42 +2,55 @@
 using System.Collections.Generic;
 using System.Linq;
 
+using Composite;
+
 using Hangfire.CompositeC1.Entities;
 using Hangfire.CompositeC1.Types;
 
 namespace Hangfire.CompositeC1
 {
-    public static class QueueApi
+    public class QueueApi
     {
-        public static IEnumerable<Guid> GetEnqueuedJobIds(CompositeC1Storage storage, string queue, int from, int perPage)
+        private readonly CompositeC1Storage _storage;
+
+        public QueueApi(CompositeC1Storage storage)
         {
-            using (var data = (CompositeC1Connection)storage.GetConnection())
+            Verify.ArgumentNotNull(storage, "storage");
+
+            _storage = storage;
+        }
+
+        public IEnumerable<string> GetQueues()
+        {
+            using (var data = (CompositeC1Connection) _storage.GetConnection())
             {
-                var jobs = data.Get<IJob>();
-                var states = data.Get<IState>();
+                return data.Get<IJobQueue>().Select(j => j.Queue).Distinct();
+            }
+        }
+
+        public IEnumerable<Guid> GetEnqueuedJobIds(string queue, int from, int perPage)
+        {
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            {
                 var queues = data.Get<IJobQueue>();
 
                 var ids = (from q in queues
-                           join j in jobs on q.JobId equals j.Id
-                           join s in states on j.StateId equals s.Id
-                           where q.Queue == queue && !q.FetchedAt.HasValue
-                           select j.Id).Skip(from).Take(perPage).ToList();
+                           where q.Queue == queue
+                           select q.Id).Skip(from).Take(perPage).ToList();
 
                 return ids;
             }
         }
 
-        public static IEnumerable<Guid> GetFetchedJobIds(CompositeC1Storage storage, string queue, int from, int perPage)
+        public IEnumerable<Guid> GetFetchedJobIds(string queue, int from, int perPage)
         {
-            using (var data = (CompositeC1Connection)storage.GetConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var jobs = data.Get<IJob>();
-                var states = data.Get<IState>();
                 var queues = data.Get<IJobQueue>();
 
                 var ids = (from q in queues
                            join j in jobs on q.JobId equals j.Id
-                           join s in states on j.StateId equals s.Id
                            where q.Queue == queue && q.FetchedAt.HasValue
                            select j.Id).Skip(from).Take(perPage).ToList();
 
@@ -45,9 +58,9 @@ namespace Hangfire.CompositeC1
             }
         }
 
-        public static EnqueuedAndFetchedCountDto GetEnqueuedAndFetchedCount(CompositeC1Storage storage, string queue)
+        public EnqueuedAndFetchedCountDto GetEnqueuedAndFetchedCount(string queue)
         {
-            using (var data = (CompositeC1Connection)storage.GetConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 var fetchedCount = data.Get<IJobQueue>().Count(q => q.Queue == queue && q.FetchedAt.HasValue);
                 var enqueuedCount = data.Get<IJobQueue>().Count(q => q.Queue == queue && !q.FetchedAt.HasValue);

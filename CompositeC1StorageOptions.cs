@@ -6,6 +6,7 @@ namespace Hangfire.CompositeC1
     {
         public TimeSpan JobExpirationCheckInterval { get; set; }
         public TimeSpan CountersAggregateInterval { get; set; }
+        public int? DashboardJobListLimit { get; set; }
 
         public CompositeC1StorageOptions()
         {

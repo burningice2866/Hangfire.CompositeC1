@@ -18,10 +18,14 @@ namespace Hangfire.CompositeC1
     public class CompositeC1MonitoringApi : IMonitoringApi
     {
         private readonly CompositeC1Storage _storage;
+        private readonly QueueApi _queueApi;
+        private readonly int? _jobListLimit;
 
-        public CompositeC1MonitoringApi(CompositeC1Storage storage)
+        public CompositeC1MonitoringApi(CompositeC1Storage storage, int? jobListLimit)
         {
             _storage = storage;
+            _queueApi = new QueueApi(_storage);
+            _jobListLimit = jobListLimit;
         }
 
         public JobList<DeletedJobDto> DeletedJobs(int from, int count)
@@ -52,7 +56,7 @@ namespace Hangfire.CompositeC1
 
         public JobList<EnqueuedJobDto> EnqueuedJobs(string queue, int from, int perPage)
         {
-            var enqueuedJobIds = QueueApi.GetEnqueuedJobIds(_storage, queue, from, perPage);
+            var enqueuedJobIds = _queueApi.GetEnqueuedJobIds(queue, from, perPage);
 
             return EnqueuedJobs(enqueuedJobIds);
         }
@@ -92,7 +96,7 @@ namespace Hangfire.CompositeC1
 
         public JobList<FetchedJobDto> FetchedJobs(string queue, int from, int perPage)
         {
-            var fetchedJobIds = QueueApi.GetFetchedJobIds(_storage, queue, from, perPage);
+            var fetchedJobIds = _queueApi.GetFetchedJobIds(queue, from, perPage);
 
             return FetchedJobs(fetchedJobIds);
         }
@@ -124,9 +128,11 @@ namespace Hangfire.CompositeC1
 
                     Servers = servers,
 
-                    Succeeded = succeded.HasValue ? succeded.Value : 0,
-                    Deleted = deleted.HasValue ? deleted.Value : 0,
-                    Recurring = recurringJobs
+                    Succeeded = succeded ?? 0,
+                    Deleted = deleted ?? 0,
+                    Recurring = recurringJobs,
+
+                    Queues = _queueApi.GetQueues().Count()
                 };
 
                 return stats;
@@ -210,8 +216,8 @@ namespace Hangfire.CompositeC1
 
                 var query =
                     from kvp in queues
-                    let enqueuedJobIds = QueueApi.GetEnqueuedJobIds(_storage, kvp.Key, 0, 5)
-                    let counters = QueueApi.GetEnqueuedAndFetchedCount(_storage, kvp.Key)
+                    let enqueuedJobIds = _queueApi.GetEnqueuedJobIds(kvp.Key, 0, 5)
+                    let counters = _queueApi.GetEnqueuedAndFetchedCount(kvp.Key)
                     select new QueueWithTopEnqueuedJobsDto
                     {
                         Name = kvp.Key,
@@ -349,12 +355,10 @@ namespace Hangfire.CompositeC1
             {
                 var jobs = data.Get<IJob>();
                 var states = data.Get<IState>();
-                var queues = data.Get<IJobQueue>();
 
                 var query = (from j in jobs
                              join s in states on j.StateId equals s.Id
-                             join q in queues on j.Id equals q.JobId
-                             where jobIds.Contains(j.Id) && q.FetchedAt.HasValue
+                             where jobIds.Contains(j.Id)
                              select new JsonJob
                              {
                                  Arguments = j.Arguments,
@@ -370,8 +374,7 @@ namespace Hangfire.CompositeC1
                     .Select(job => new KeyValuePair<string, FetchedJobDto>(job.Id, new FetchedJobDto
                     {
                         Job = DeserializeJob(job.InvocationData, job.Arguments),
-                        State = job.StateName,
-                        FetchedAt = job.FetchedAt
+                        State = job.StateName
                     }));
 
                 return new JobList<FetchedJobDto>(query);
@@ -476,9 +479,14 @@ namespace Hangfire.CompositeC1
         {
             using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
-                var count = data.Get<IJob>().Count(j => j.StateName == stateName);
+                var query = data.Get<IJob>().Where(j => j.StateName == stateName);
 
-                return count;
+                if (_jobListLimit.HasValue)
+                {
+                    query = query.Take(_jobListLimit.Value);
+                }
+
+                return query.Count();
             }
         }
     }

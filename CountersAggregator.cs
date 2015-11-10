@@ -2,13 +2,18 @@
 using System.Linq;
 using System.Threading;
 
+using Composite;
+
 using Hangfire.CompositeC1.Types;
+using Hangfire.Logging;
 using Hangfire.Server;
 
 namespace Hangfire.CompositeC1
 {
     public class CountersAggregator : IServerComponent
     {
+        private static readonly ILog Logger = LogProvider.GetCurrentClassLogger();
+
         private const int NumberOfRecordsInSinglePass = 1000;
         private static readonly TimeSpan DelayBetweenPasses = TimeSpan.FromSeconds(1);
 
@@ -17,12 +22,16 @@ namespace Hangfire.CompositeC1
 
         public CountersAggregator(CompositeC1Storage storage, TimeSpan interval)
         {
+            Verify.ArgumentNotNull(storage, "storage");
+
             _storage = storage;
             _interval = interval;
         }
 
         public void Execute(CancellationToken cancellationToken)
         {
+            Logger.DebugFormat("Aggregating records in 'Counter' table...");
+
             int removedCount;
 
             do
