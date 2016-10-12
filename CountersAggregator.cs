@@ -10,12 +10,12 @@ using Hangfire.Server;
 
 namespace Hangfire.CompositeC1
 {
-    public class CountersAggregator : IServerComponent
+    public class CountersAggregator : IServerComponent, IBackgroundProcess
     {
         private static readonly ILog Logger = LogProvider.GetCurrentClassLogger();
 
-        private const int NumberOfRecordsInSinglePass = 1000;
-        private static readonly TimeSpan DelayBetweenPasses = TimeSpan.FromSeconds(1);
+        private const int NumberOfRecordsInSinglePass = 10000;
+        private static readonly TimeSpan DelayBetweenPasses = TimeSpan.FromMilliseconds(500);
 
         private readonly CompositeC1Storage _storage;
         private readonly TimeSpan _interval;
@@ -28,9 +28,14 @@ namespace Hangfire.CompositeC1
             _interval = interval;
         }
 
+        public void Execute(BackgroundProcessContext context)
+        {
+            Execute(context.CancellationToken);
+        }
+
         public void Execute(CancellationToken cancellationToken)
         {
-            Logger.DebugFormat("Aggregating records in 'Counter' table...");
+            Logger.Debug("Aggregating records in 'Counter' table...");
 
             int removedCount;
 
@@ -49,9 +54,7 @@ namespace Hangfire.CompositeC1
 
                     foreach (var counter in groupedCounters)
                     {
-                        var add = false;
                         var aggregate = data.Get<IAggregatedCounter>().SingleOrDefault(a => a.Key == counter.Key);
-
                         if (aggregate == null)
                         {
                             aggregate = data.CreateNew<IAggregatedCounter>();
@@ -60,8 +63,6 @@ namespace Hangfire.CompositeC1
                             aggregate.Key = counter.Key;
                             aggregate.Value = counter.Value;
                             aggregate.ExpireAt = counter.ExpireAt;
-
-                            add = true;
                         }
                         else
                         {
@@ -73,7 +74,7 @@ namespace Hangfire.CompositeC1
                             }
                         }
 
-                        data.AddOrUpdate(add, aggregate);
+                        data.AddOrUpdate(aggregate);
                     }
 
                     removedCount = counters.Count();
@@ -87,6 +88,8 @@ namespace Hangfire.CompositeC1
                     cancellationToken.ThrowIfCancellationRequested();
                 }
             } while (removedCount != 0);
+
+            Logger.Trace("Records from the 'Counter' table aggregated.");
 
             cancellationToken.WaitHandle.WaitOne(_interval);
         }

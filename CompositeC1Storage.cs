@@ -1,8 +1,9 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 
+using Composite.Data;
 using Composite.Data.DynamicTypes;
 
-using Hangfire.CompositeC1.Types;
 using Hangfire.Logging;
 using Hangfire.Server;
 using Hangfire.Storage;
@@ -19,21 +20,12 @@ namespace Hangfire.CompositeC1
         {
             _options = options;
 
-            DynamicTypeManager.EnsureCreateStore(typeof(ICounter));
-            DynamicTypeManager.EnsureCreateStore(typeof(IAggregatedCounter));
-            DynamicTypeManager.EnsureCreateStore(typeof(IHash));
-            DynamicTypeManager.EnsureCreateStore(typeof(IJob));
-            DynamicTypeManager.EnsureCreateStore(typeof(IJobParameter));
-            DynamicTypeManager.EnsureCreateStore(typeof(IJobQueue));
-            DynamicTypeManager.EnsureCreateStore(typeof(IList));
-            DynamicTypeManager.EnsureCreateStore(typeof(IServer));
-            DynamicTypeManager.EnsureCreateStore(typeof(ISet));
-            DynamicTypeManager.EnsureCreateStore(typeof(IState));
+            EnsureDataTypes();
         }
 
         public override IStorageConnection GetConnection()
         {
-            return new CompositeC1Connection();
+            return new CompositeC1Connection(_options.QueuePollInterval);
         }
 
         public override IMonitoringApi GetMonitoringApi()
@@ -63,6 +55,22 @@ namespace Hangfire.CompositeC1
             }
 
             base.WriteOptionsToLog(logger);
+        }
+
+        private static void EnsureDataTypes()
+        {
+            var types = from type in typeof(CompositeC1Storage).Assembly.GetTypes()
+                        where type.IsInterface
+                            && type.Namespace != null && type.Namespace.Equals("Hangfire.CompositeC1.Types")
+                            && typeof(IData).IsAssignableFrom(type)
+                        let attributes = type.GetCustomAttributes(typeof(ImmutableTypeIdAttribute), false)
+                        where attributes.Any()
+                        select type;
+
+            foreach (var t in types)
+            {
+                DynamicTypeManager.EnsureCreateStore(t);
+            }
         }
     }
 }

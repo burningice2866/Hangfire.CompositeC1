@@ -4,7 +4,7 @@ namespace Hangfire.CompositeC1.Entities
 {
     public class JsonJob
     {
-        public string Id { get; set; }
+        public Guid Id { get; set; }
         public string InvocationData { get; set; }
         public string Arguments { get; set; }
         public DateTime CreatedAt { get; set; }

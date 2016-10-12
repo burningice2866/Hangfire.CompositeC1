@@ -22,7 +22,7 @@ namespace Hangfire.CompositeC1
 
         public IEnumerable<string> GetQueues()
         {
-            using (var data = (CompositeC1Connection) _storage.GetConnection())
+            using (var data = (CompositeC1Connection)_storage.GetConnection())
             {
                 return data.Get<IJobQueue>().Select(j => j.Queue).Distinct();
             }
@@ -34,11 +34,11 @@ namespace Hangfire.CompositeC1
             {
                 var queues = data.Get<IJobQueue>();
 
-                var ids = (from q in queues
-                           where q.Queue == queue
-                           select q.Id).Skip(from).Take(perPage).ToList();
+                var jobIds = (from q in queues
+                              where q.Queue == queue
+                              select q.JobId).Skip(from).Take(perPage).ToList();
 
-                return ids;
+                return jobIds;
             }
         }
 

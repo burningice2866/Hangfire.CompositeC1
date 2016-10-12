@@ -20,10 +20,17 @@ namespace Hangfire.CompositeC1
     {
         private static readonly object FetchJobsLock = new object();
 
+        // This is an optimization that helps to overcome the polling delay, when
+        // both client and server reside in the same process. Everything is working
+        // without this event, but it helps to reduce the delays in processing.
+        private readonly AutoResetEvent _newItemInQueueEvent = new AutoResetEvent(true);
+
+        private readonly TimeSpan _queuePollInterval;
         private readonly DataConnection _connection;
 
-        public CompositeC1Connection()
+        public CompositeC1Connection(TimeSpan queuePollInterval)
         {
+            _queuePollInterval = queuePollInterval;
             _connection = new DataConnection();
         }
 
@@ -37,13 +44,9 @@ namespace Hangfire.CompositeC1
             Verify.ArgumentNotNull(serverId, "serverId");
             Verify.ArgumentNotNull(context, "context");
 
-            var add = false;
-
             var server = Get<IServer>().SingleOrDefault(s => s.Id == serverId);
             if (server == null)
             {
-                add = true;
-
                 server = CreateNew<IServer>();
 
                 server.Id = serverId;
@@ -59,7 +62,7 @@ namespace Hangfire.CompositeC1
             server.LastHeartbeat = DateTime.UtcNow;
             server.Data = JobHelper.ToJson(data);
 
-            AddOrUpdate(add, server);
+            AddOrUpdate(server);
         }
 
         public override string CreateExpiredJob(Job job, IDictionary<string, string> parameters, DateTime createdAt, TimeSpan expireIn)
@@ -137,7 +140,7 @@ namespace Hangfire.CompositeC1
                     }
                 }
 
-                cancellationToken.WaitHandle.WaitOne(TimeSpan.FromSeconds(15));
+                WaitHandle.WaitAny(new[] { cancellationToken.WaitHandle, _newItemInQueueEvent }, _queuePollInterval);
                 cancellationToken.ThrowIfCancellationRequested();
             }
 
@@ -148,7 +151,9 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNull(key, "key");
 
-            var hashes = Get<IHash>().Where(h => h.Key == key).ToDictionary(h => h.Field, h => h.Value);
+            var hashes = (from hash in Get<IHash>()
+                          where hash.Key == key
+                          select new { hash.Field, hash.Value }).ToDictionary(h => h.Field, h => h.Value);
 
             return hashes.Count == 0 ? null : hashes;
         }
@@ -171,12 +176,12 @@ namespace Hangfire.CompositeC1
                 throw new ArgumentException("The `toScore` value must be higher or equal to the `fromScore` value.");
             }
 
-            var set = Get<ISet>()
-                    .Where(s => s.Key == key && s.Score >= fromScore && s.Score <= toScore)
-                    .OrderByDescending(s => s.Score)
-                    .FirstOrDefault();
+            var value = (from set in Get<ISet>()
+                         where set.Key == key && set.Score >= fromScore && set.Score <= toScore
+                         orderby set.Score descending
+                         select set.Value).FirstOrDefault();
 
-            return set == null ? null : set.Value;
+            return value == null ? null : value;
         }
 
         public override JobData GetJobData(string jobId)
@@ -415,13 +420,9 @@ namespace Hangfire.CompositeC1
             Verify.ArgumentNotNull(id, "id");
             Verify.ArgumentNotNull(name, "name");
 
-            var add = false;
-
             var parameter = Get<IJobParameter>().SingleOrDefault(s => s.JobId == Guid.Parse(id) && s.Name == name);
             if (parameter == null)
             {
-                add = true;
-
                 parameter = CreateNew<IJobParameter>();
 
                 parameter.Id = Guid.NewGuid();
@@ -431,7 +432,7 @@ namespace Hangfire.CompositeC1
 
             parameter.Value = value;
 
-            AddOrUpdate(add, parameter);
+            AddOrUpdate(parameter);
         }
 
         public override void SetRangeInHash(string key, IEnumerable<KeyValuePair<string, string>> keyValuePairs)
@@ -443,13 +444,9 @@ namespace Hangfire.CompositeC1
             {
                 foreach (var kvp in keyValuePairs)
                 {
-                    var add = false;
-
                     var hash = Get<IHash>().SingleOrDefault(h => h.Key == key && h.Field == kvp.Key);
                     if (hash == null)
                     {
-                        add = true;
-
                         hash = CreateNew<IHash>();
 
                         hash.Id = Guid.NewGuid();
@@ -459,7 +456,7 @@ namespace Hangfire.CompositeC1
 
                     hash.Value = kvp.Value;
 
-                    AddOrUpdate(add, hash);
+                    AddOrUpdate(hash);
                 }
 
                 transaction.Complete();
@@ -474,20 +471,25 @@ namespace Hangfire.CompositeC1
             return counters.Concat(aggregatedCounters).Sum(v => v);
         }
 
+        public void NotifyNewItemInQueue()
+        {
+            _newItemInQueueEvent.Set();
+        }
+
         public T CreateNew<T>() where T : class, IData
         {
             return _connection.CreateNew<T>();
         }
 
-        public void AddOrUpdate<T>(bool add, T item) where T : class, IData
+        public void AddOrUpdate<T>(T item) where T : class, IData
         {
-            if (add)
+            if (item.DataSourceId.ExistsInStore)
             {
-                Add(item);
+                Update(item);
             }
             else
             {
-                Update(item);
+                Add(item);
             }
         }
 

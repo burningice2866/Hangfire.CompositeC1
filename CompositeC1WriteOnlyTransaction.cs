@@ -18,6 +18,7 @@ namespace Hangfire.CompositeC1
         private readonly IList<Action<CompositeC1Connection>> _queue = new List<Action<CompositeC1Connection>>();
 
         private readonly CompositeC1Connection _connection;
+        private bool _notifyNewItemInQueue;
 
         public CompositeC1WriteOnlyTransaction(CompositeC1Connection connection)
         {
@@ -53,6 +54,8 @@ namespace Hangfire.CompositeC1
                 queueData.JobId = Guid.Parse(jobId);
 
                 data.Add(queueData);
+
+                _notifyNewItemInQueue = true;
             });
         }
 
@@ -65,13 +68,9 @@ namespace Hangfire.CompositeC1
         {
             QueueCommand(data =>
             {
-                var add = false;
-
                 var set = data.Get<ISet>().SingleOrDefault(s => s.Key == key && s.Value == value);
                 if (set == null)
                 {
-                    add = true;
-
                     set = data.CreateNew<ISet>();
 
                     set.Id = Guid.NewGuid();
@@ -81,7 +80,7 @@ namespace Hangfire.CompositeC1
 
                 set.Score = (long)score;
 
-                data.AddOrUpdate(add, set);
+                data.AddOrUpdate(set);
             });
         }
 
@@ -103,8 +102,6 @@ namespace Hangfire.CompositeC1
         {
             QueueCommand(data =>
             {
-                var add = false;
-
                 var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
                 if (counter != null)
                 {
@@ -117,11 +114,9 @@ namespace Hangfire.CompositeC1
                     counter.Id = Guid.NewGuid();
                     counter.Key = key;
                     counter.Value = 1;
-
-                    add = true;
                 }
 
-                data.AddOrUpdate(add, counter);
+                data.AddOrUpdate(counter);
             });
         }
 
@@ -129,8 +124,6 @@ namespace Hangfire.CompositeC1
         {
             QueueCommand(data =>
             {
-                var add = false;
-
                 var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
                 if (counter != null)
                 {
@@ -143,13 +136,11 @@ namespace Hangfire.CompositeC1
                     counter.Id = Guid.NewGuid();
                     counter.Key = key;
                     counter.Value = 1;
-
-                    add = true;
                 }
 
                 counter.ExpireAt = DateTime.UtcNow.Add(expireIn);
 
-                data.AddOrUpdate(add, counter);
+                data.AddOrUpdate(counter);
             });
         }
 
@@ -157,8 +148,6 @@ namespace Hangfire.CompositeC1
         {
             QueueCommand(data =>
             {
-                var add = false;
-
                 var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
                 if (counter != null)
                 {
@@ -171,11 +160,9 @@ namespace Hangfire.CompositeC1
                     counter.Id = Guid.NewGuid();
                     counter.Key = key;
                     counter.Value = 0;
-
-                    add = true;
                 }
 
-                data.AddOrUpdate(add, counter);
+                data.AddOrUpdate(counter);
             });
         }
 
@@ -183,8 +170,6 @@ namespace Hangfire.CompositeC1
         {
             QueueCommand(data =>
             {
-                var add = false;
-
                 var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
                 if (counter != null)
                 {
@@ -197,13 +182,11 @@ namespace Hangfire.CompositeC1
                     counter.Id = Guid.NewGuid();
                     counter.Key = key;
                     counter.Value = 0;
-
-                    add = true;
                 }
 
                 counter.ExpireAt = DateTime.UtcNow.Add(expireIn);
 
-                data.AddOrUpdate(add, counter);
+                data.AddOrUpdate(counter);
             });
         }
 
@@ -309,13 +292,9 @@ namespace Hangfire.CompositeC1
                 var local = kvp;
                 QueueCommand(data =>
                 {
-                    var add = false;
-
                     var hash = data.Get<IHash>().SingleOrDefault(h => h.Key == key && h.Field == local.Key);
                     if (hash == null)
                     {
-                        add = true;
-
                         hash = data.CreateNew<IHash>();
 
                         hash.Id = Guid.NewGuid();
@@ -325,7 +304,7 @@ namespace Hangfire.CompositeC1
 
                     hash.Value = local.Value;
 
-                    data.AddOrUpdate(add, hash);
+                    data.AddOrUpdate(hash);
                 });
             }
         }
@@ -346,6 +325,13 @@ namespace Hangfire.CompositeC1
 
                 _queue.Clear();
                 transaction.Complete();
+            }
+
+            if (_notifyNewItemInQueue)
+            {
+                _connection.NotifyNewItemInQueue();
+
+                _notifyNewItemInQueue = false;
             }
         }
 
