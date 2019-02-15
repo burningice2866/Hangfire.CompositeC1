@@ -6,7 +6,7 @@ namespace Hangfire.CompositeC1.Types
 {
     [ImmutableTypeId("1e1e1c0b-384d-4599-baff-4414e91106bb")]
     [Title("Hash")]
-    [KeyPropertyName("Id")]
+    [KeyPropertyName(nameof(Id))]
     public interface IHash : IExpirable
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]

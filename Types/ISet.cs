@@ -6,7 +6,7 @@ namespace Hangfire.CompositeC1.Types
 {
     [ImmutableTypeId("51e6f50e-d797-46f9-b28e-002e9c824e45")]
     [Title("Set")]
-    [KeyPropertyName("Id")]
+    [KeyPropertyName(nameof(Id))]
     public interface ISet : IExpirable
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]

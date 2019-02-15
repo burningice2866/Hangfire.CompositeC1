@@ -11,7 +11,7 @@ namespace Hangfire.CompositeC1.Types
     [DataAncestorProvider(typeof(NoAncestorDataAncestorProvider))]
     [ImmutableTypeId("62f270b3-f9c3-435d-a5a5-4bb7a4a20a45")]
     [Title("Job parameter")]
-    [KeyPropertyName("Id")]
+    [KeyPropertyName(nameof(Id))]
     public interface IJobParameter : IData
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]

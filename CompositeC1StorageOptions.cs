@@ -12,16 +12,31 @@ namespace Hangfire.CompositeC1
         private TimeSpan _queuePollInterval;
         public TimeSpan QueuePollInterval
         {
-            get { return _queuePollInterval; }
+            get => _queuePollInterval;
 
             set
             {
-                var message = String.Format("The QueuePollInterval property value should be positive. Given: {0}.", value);
+                var message = $"The QueuePollInterval property value should be positive. Given: {value}.";
 
                 Verify.IsTrue(value != TimeSpan.Zero, message);
                 Verify.IsTrue(value == value.Duration(), message);
 
                 _queuePollInterval = value;
+            }
+        }
+
+        private TimeSpan _slidingInvisibilityTimeout;
+        public TimeSpan SlidingInvisibilityTimeout
+        {
+            get => _slidingInvisibilityTimeout;
+            set
+            {
+                if (value <= TimeSpan.Zero)
+                {
+                    throw new ArgumentOutOfRangeException("Sliding timeout should be greater than zero");
+                }
+
+                _slidingInvisibilityTimeout = value;
             }
         }
 
@@ -32,6 +47,7 @@ namespace Hangfire.CompositeC1
             JobExpirationCheckInterval = TimeSpan.FromHours(1);
             CountersAggregateInterval = TimeSpan.FromMinutes(5);
             QueuePollInterval = TimeSpan.FromSeconds(15);
+            SlidingInvisibilityTimeout = TimeSpan.FromSeconds(10);
             DashboardJobListLimit = 10000;
         }
     }

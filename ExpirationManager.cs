@@ -5,6 +5,7 @@ using System.Threading;
 using Composite;
 using Composite.Data;
 
+using Hangfire.Common;
 using Hangfire.CompositeC1.Types;
 using Hangfire.Logging;
 using Hangfire.Server;
@@ -13,11 +14,7 @@ namespace Hangfire.CompositeC1
 {
     public class ExpirationManager : IServerComponent, IBackgroundProcess
     {
-        private static readonly ILog Logger = LogProvider.GetCurrentClassLogger();
-
         private static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(5);
-        private static readonly TimeSpan DelayBetweenPasses = TimeSpan.FromSeconds(1);
-
         private const int NumberOfRecordsInSinglePass = 1000;
 
         private static readonly Type[] ExpirableTypes = (from type in typeof(CompositeC1Storage).Assembly.GetTypes()
@@ -26,12 +23,14 @@ namespace Hangfire.CompositeC1
                                                             && typeof(IExpirable).IsAssignableFrom(type)
                                                          select type).ToArray();
 
+        private readonly ILog _logger = LogProvider.GetCurrentClassLogger();
+
         private readonly CompositeC1Storage _storage;
         private readonly TimeSpan _checkInterval;
 
         public ExpirationManager(CompositeC1Storage storage, TimeSpan checkInterval)
         {
-            Verify.ArgumentNotNull(storage, "storage");
+            Verify.ArgumentNotNull(storage, nameof(storage));
 
             _storage = storage;
             _checkInterval = checkInterval;
@@ -45,42 +44,34 @@ namespace Hangfire.CompositeC1
         public void Execute(CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
-            var connection = (CompositeC1Connection)_storage.GetConnection();
 
             foreach (var t in ExpirableTypes)
             {
-                Logger.DebugFormat("Removing outdated records from type '{0}'", t.Name);
+                _logger.Debug($"Removing outdated records from type '{t.Name}'");
 
-                int removedCount;
-
-                do
+                _storage.UseConnection(connection =>
                 {
-                    using (connection.AcquireDistributedLock("locks:expirationmanager", DefaultLockTimeout))
+                    int affected;
+
+                    do
                     {
-                        var table = connection.Get<IExpirable>(t);
-                        var data = (from d in table
-                                    where d.ExpireAt < now
-                                    orderby d.ExpireAt
-                                    select d).Take(NumberOfRecordsInSinglePass).ToList();
-
-                        removedCount = data.Count;
-
-                        if (removedCount <= 0)
+                        using (connection.AcquireDistributedLock("locks:ExpirationManager", DefaultLockTimeout))
                         {
-                            continue;
+                            var table = connection.Get<IExpirable>(t);
+                            var records = (from d in table
+                                           where d.ExpireAt < now
+                                           orderby d.ExpireAt
+                                           select d).Take(NumberOfRecordsInSinglePass).ToList();
+
+                            affected = records.Count;
+
+                            connection.Delete<IData>(records);
                         }
-
-                        Logger.TraceFormat("Removed '{0}' outdated records from type '{1}'", removedCount, t.Name);
-
-                        connection.Delete<IData>(data);
-
-                        cancellationToken.WaitHandle.WaitOne(DelayBetweenPasses);
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
-                } while (removedCount != 0);
+                    } while (affected == NumberOfRecordsInSinglePass);
+                });
             }
 
-            cancellationToken.WaitHandle.WaitOne(_checkInterval);
+            cancellationToken.Wait(_checkInterval);
         }
 
         public override string ToString()

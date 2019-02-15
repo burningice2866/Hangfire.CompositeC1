@@ -11,7 +11,7 @@ namespace Hangfire.CompositeC1.Types
     [DataAncestorProvider(typeof(NoAncestorDataAncestorProvider))]
     [ImmutableTypeId("dc94194d-80ce-4a24-aa7f-79e05fbe232f")]
     [Title("State")]
-    [KeyPropertyName("Id")]
+    [KeyPropertyName(nameof(Id))]
     public interface IState : IData
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]

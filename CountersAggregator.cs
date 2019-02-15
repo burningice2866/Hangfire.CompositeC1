@@ -4,6 +4,7 @@ using System.Threading;
 
 using Composite;
 
+using Hangfire.Common;
 using Hangfire.CompositeC1.Types;
 using Hangfire.Logging;
 using Hangfire.Server;
@@ -12,10 +13,10 @@ namespace Hangfire.CompositeC1
 {
     public class CountersAggregator : IServerComponent, IBackgroundProcess
     {
-        private static readonly ILog Logger = LogProvider.GetCurrentClassLogger();
-
         private const int NumberOfRecordsInSinglePass = 10000;
         private static readonly TimeSpan DelayBetweenPasses = TimeSpan.FromMilliseconds(500);
+
+        private readonly ILog _logger = LogProvider.GetCurrentClassLogger();
 
         private readonly CompositeC1Storage _storage;
         private readonly TimeSpan _interval;
@@ -35,15 +36,15 @@ namespace Hangfire.CompositeC1
 
         public void Execute(CancellationToken cancellationToken)
         {
-            Logger.Debug("Aggregating records in 'Counter' table...");
+            _logger.Debug("Aggregating records in 'Counter' table...");
 
             int removedCount;
 
             do
             {
-                using (var data = (CompositeC1Connection)_storage.GetConnection())
+                removedCount = _storage.UseConnection(connection =>
                 {
-                    var counters = data.Get<ICounter>().Take(NumberOfRecordsInSinglePass).ToList();
+                    var counters = connection.Get<ICounter>().Take(NumberOfRecordsInSinglePass).ToList();
 
                     var groupedCounters = counters.GroupBy(c => c.Key).Select(g => new
                     {
@@ -54,10 +55,10 @@ namespace Hangfire.CompositeC1
 
                     foreach (var counter in groupedCounters)
                     {
-                        var aggregate = data.Get<IAggregatedCounter>().SingleOrDefault(a => a.Key == counter.Key);
+                        var aggregate = connection.Get<IAggregatedCounter>().SingleOrDefault(a => a.Key == counter.Key);
                         if (aggregate == null)
                         {
-                            aggregate = data.CreateNew<IAggregatedCounter>();
+                            aggregate = connection.CreateNew<IAggregatedCounter>();
 
                             aggregate.Id = Guid.NewGuid();
                             aggregate.Key = counter.Key;
@@ -74,24 +75,24 @@ namespace Hangfire.CompositeC1
                             }
                         }
 
-                        data.AddOrUpdate(aggregate);
+                        connection.AddOrUpdate(aggregate);
                     }
 
-                    removedCount = counters.Count();
+                    connection.Delete<ICounter>(counters);
 
-                    data.Delete<ICounter>(counters);
-                }
+                    return counters.Count();
+                });
 
                 if (removedCount > 0)
                 {
-                    cancellationToken.WaitHandle.WaitOne(DelayBetweenPasses);
+                    cancellationToken.Wait(DelayBetweenPasses);
                     cancellationToken.ThrowIfCancellationRequested();
                 }
             } while (removedCount != 0);
 
-            Logger.Trace("Records from the 'Counter' table aggregated.");
+            _logger.Trace("Records from the 'Counter' table aggregated.");
 
-            cancellationToken.WaitHandle.WaitOne(_interval);
+            cancellationToken.Wait(_interval);
         }
 
         public override string ToString()

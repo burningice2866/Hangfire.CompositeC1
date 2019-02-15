@@ -11,7 +11,7 @@ namespace Hangfire.CompositeC1.Types
     [DataAncestorProvider(typeof(NoAncestorDataAncestorProvider))]
     [ImmutableTypeId("4fe31504-dd78-4c60-bbf0-a68e08aa0cde")]
     [Title("Server")]
-    [KeyPropertyName("Id")]
+    [KeyPropertyName(nameof(Id))]
     public interface IServer : IData
     {
         [StoreFieldType(PhysicalStoreFieldType.String, 100)]

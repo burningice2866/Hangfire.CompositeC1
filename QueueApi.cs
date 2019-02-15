@@ -22,32 +22,32 @@ namespace Hangfire.CompositeC1
 
         public IEnumerable<string> GetQueues()
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                return data.Get<IJobQueue>().Select(j => j.Queue).Distinct();
-            }
+                return connection.Get<IJobQueue>().Select(j => j.Queue).Distinct();
+            });
         }
 
         public IEnumerable<Guid> GetEnqueuedJobIds(string queue, int from, int perPage)
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var queues = data.Get<IJobQueue>();
+                var queues = connection.Get<IJobQueue>();
 
                 var jobIds = (from q in queues
                               where q.Queue == queue
                               select q.JobId).Skip(from).Take(perPage).ToList();
 
                 return jobIds;
-            }
+            });
         }
 
         public IEnumerable<Guid> GetFetchedJobIds(string queue, int from, int perPage)
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var jobs = data.Get<IJob>();
-                var queues = data.Get<IJobQueue>();
+                var jobs = connection.Get<IJob>();
+                var queues = connection.Get<IJobQueue>();
 
                 var ids = (from q in queues
                            join j in jobs on q.JobId equals j.Id
@@ -55,22 +55,24 @@ namespace Hangfire.CompositeC1
                            select j.Id).Skip(from).Take(perPage).ToList();
 
                 return ids;
-            }
+            });
         }
 
         public EnqueuedAndFetchedCountDto GetEnqueuedAndFetchedCount(string queue)
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var fetchedCount = data.Get<IJobQueue>().Count(q => q.Queue == queue && q.FetchedAt.HasValue);
-                var enqueuedCount = data.Get<IJobQueue>().Count(q => q.Queue == queue && !q.FetchedAt.HasValue);
+                var jobs = connection.Get<IJobQueue>().Where(q => q.Queue == queue);
+
+                var fetchedCount = jobs.Count(q => q.FetchedAt.HasValue);
+                var enqueuedCount = jobs.Count(q => !q.FetchedAt.HasValue);
 
                 return new EnqueuedAndFetchedCountDto
                 {
                     EnqueuedCount = enqueuedCount,
                     FetchedCount = fetchedCount
                 };
-            }
+            });
         }
     }
 }

@@ -27,9 +27,9 @@ namespace Hangfire.CompositeC1
 
         public void AddJobState(string jobId, IHangfireState state)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var stateData = data.CreateNew<IState>();
+                var stateData = connection.CreateNew<IState>();
 
                 stateData.Id = Guid.NewGuid();
                 stateData.JobId = Guid.Parse(jobId);
@@ -38,22 +38,22 @@ namespace Hangfire.CompositeC1
                 stateData.CreatedAt = DateTime.UtcNow;
                 stateData.Data = JobHelper.ToJson(state.SerializeData());
 
-                data.Add(stateData);
+                connection.Add(stateData);
             });
         }
 
         public void AddToQueue(string queue, string jobId)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var queueData = data.CreateNew<IJobQueue>();
+                var queuedJob = connection.CreateNew<IJobQueue>();
 
-                queueData.Id = Guid.NewGuid();
-                queueData.Queue = queue;
-                queueData.AddedAt = DateTime.UtcNow;
-                queueData.JobId = Guid.Parse(jobId);
+                queuedJob.Id = Guid.NewGuid();
+                queuedJob.JobId = Guid.Parse(jobId);
+                queuedJob.Queue = queue;
+                queuedJob.AddedAt = DateTime.UtcNow;
 
-                data.Add(queueData);
+                connection.Add(queuedJob);
 
                 _notifyNewItemInQueue = true;
             });
@@ -66,12 +66,12 @@ namespace Hangfire.CompositeC1
 
         public void AddToSet(string key, string value, double score)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var set = data.Get<ISet>().SingleOrDefault(s => s.Key == key && s.Value == value);
+                var set = connection.Get<ISet>().SingleOrDefault(s => s.Key == key && s.Value == value);
                 if (set == null)
                 {
-                    set = data.CreateNew<ISet>();
+                    set = connection.CreateNew<ISet>();
 
                     set.Id = Guid.NewGuid();
                     set.Key = key;
@@ -80,58 +80,58 @@ namespace Hangfire.CompositeC1
 
                 set.Score = (long)score;
 
-                data.AddOrUpdate(set);
+                connection.AddOrUpdate(set);
             });
         }
 
         public void ExpireJob(string jobId, TimeSpan expireIn)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var job = data.Get<IJob>().SingleOrDefault(j => j.Id == Guid.Parse(jobId));
+                var job = connection.Get<IJob>().SingleOrDefault(j => j.Id == Guid.Parse(jobId));
                 if (job != null)
                 {
                     job.ExpireAt = DateTime.UtcNow.Add(expireIn);
 
-                    data.Update(job);
+                    connection.Update(job);
                 }
             });
         }
 
         public void IncrementCounter(string key)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
+                var counter = connection.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
                 if (counter != null)
                 {
                     counter.Value = counter.Value + 1;
                 }
                 else
                 {
-                    counter = data.CreateNew<ICounter>();
+                    counter = connection.CreateNew<ICounter>();
 
                     counter.Id = Guid.NewGuid();
                     counter.Key = key;
                     counter.Value = 1;
                 }
 
-                data.AddOrUpdate(counter);
+                connection.AddOrUpdate(counter);
             });
         }
 
         public void IncrementCounter(string key, TimeSpan expireIn)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
+                var counter = connection.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
                 if (counter != null)
                 {
                     counter.Value = counter.Value + 1;
                 }
                 else
                 {
-                    counter = data.CreateNew<ICounter>();
+                    counter = connection.CreateNew<ICounter>();
 
                     counter.Id = Guid.NewGuid();
                     counter.Key = key;
@@ -140,44 +140,44 @@ namespace Hangfire.CompositeC1
 
                 counter.ExpireAt = DateTime.UtcNow.Add(expireIn);
 
-                data.AddOrUpdate(counter);
+                connection.AddOrUpdate(counter);
             });
         }
 
         public void DecrementCounter(string key)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
+                var counter = connection.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
                 if (counter != null)
                 {
                     counter.Value = counter.Value - 1;
                 }
                 else
                 {
-                    counter = data.CreateNew<ICounter>();
+                    counter = connection.CreateNew<ICounter>();
 
                     counter.Id = Guid.NewGuid();
                     counter.Key = key;
                     counter.Value = 0;
                 }
 
-                data.AddOrUpdate(counter);
+                connection.AddOrUpdate(counter);
             });
         }
 
         public void DecrementCounter(string key, TimeSpan expireIn)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var counter = data.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
+                var counter = connection.Get<ICounter>().Where(c => c.Key == key).OrderByDescending(c => c.Value).FirstOrDefault();
                 if (counter != null)
                 {
                     counter.Value = counter.Value - 1;
                 }
                 else
                 {
-                    counter = data.CreateNew<ICounter>();
+                    counter = connection.CreateNew<ICounter>();
 
                     counter.Id = Guid.NewGuid();
                     counter.Key = key;
@@ -186,58 +186,58 @@ namespace Hangfire.CompositeC1
 
                 counter.ExpireAt = DateTime.UtcNow.Add(expireIn);
 
-                data.AddOrUpdate(counter);
+                connection.AddOrUpdate(counter);
             });
         }
 
         public void InsertToList(string key, string value)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var list = data.CreateNew<IList>();
+                var list = connection.CreateNew<IList>();
 
                 list.Id = Guid.NewGuid();
                 list.Key = key;
                 list.Value = value;
 
-                data.Add(list);
+                connection.Add(list);
             });
         }
 
         public void PersistJob(string jobId)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var job = data.Get<IJob>().SingleOrDefault(j => j.Id == Guid.Parse(jobId));
+                var job = connection.Get<IJob>().SingleOrDefault(j => j.Id == Guid.Parse(jobId));
                 if (job != null)
                 {
                     job.ExpireAt = null;
 
-                    data.Update(job);
+                    connection.Update(job);
                 }
             });
         }
 
         public void RemoveFromList(string key, string value)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var list = data.Get<IList>().SingleOrDefault(j => j.Key == key && j.Value == value);
+                var list = connection.Get<IList>().SingleOrDefault(j => j.Key == key && j.Value == value);
                 if (list != null)
                 {
-                    data.Delete(list);
+                    connection.Delete(list);
                 }
             });
         }
 
         public void RemoveFromSet(string key, string value)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var set = data.Get<ISet>().SingleOrDefault(j => j.Key == key && j.Value == value);
+                var set = connection.Get<ISet>().SingleOrDefault(j => j.Key == key && j.Value == value);
                 if (set != null)
                 {
-                    data.Delete(set);
+                    connection.Delete(set);
                 }
             });
         }
@@ -246,21 +246,21 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNull(key, "key");
 
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var hash = data.Get<IHash>().Where(j => j.Key == key);
+                var hash = connection.Get<IHash>().Where(j => j.Key == key);
                 if (hash.Any())
                 {
-                    data.Delete<IHash>(hash);
+                    connection.Delete<IHash>(hash);
                 }
             });
         }
 
         public void SetJobState(string jobId, IHangfireState state)
         {
-            QueueCommand(data =>
+            QueueCommand(connection =>
             {
-                var stateData = data.CreateNew<IState>();
+                var stateData = connection.CreateNew<IState>();
 
                 stateData.Id = Guid.NewGuid();
                 stateData.JobId = Guid.Parse(jobId);
@@ -269,43 +269,47 @@ namespace Hangfire.CompositeC1
                 stateData.CreatedAt = DateTime.UtcNow;
                 stateData.Data = JobHelper.ToJson(state.SerializeData());
 
-                data.Add(stateData);
+                connection.Add(stateData);
 
-                var job = data.Get<IJob>().SingleOrDefault(j => j.Id == Guid.Parse(jobId));
+                var job = connection.Get<IJob>().SingleOrDefault(j => j.Id == Guid.Parse(jobId));
                 if (job != null)
                 {
                     job.StateId = stateData.Id;
                     job.StateName = state.Name;
 
-                    data.Update(job);
+                    connection.Update(job);
                 }
             });
         }
 
         public void SetRangeInHash(string key, IEnumerable<KeyValuePair<string, string>> keyValuePairs)
         {
-            Verify.ArgumentNotNull(key, "key");
-            Verify.ArgumentNotNull(keyValuePairs, "keyValuePairs");
+            Verify.ArgumentNotNull(key, nameof(key));
+            Verify.ArgumentNotNull(keyValuePairs, nameof(keyValuePairs));
 
-            foreach (var kvp in keyValuePairs)
+            using (_connection.AcquireDistributedLock("locks:SetRangeInHash", TimeSpan.FromMinutes(1)))
             {
-                var local = kvp;
-                QueueCommand(data =>
+                foreach (var kvp in keyValuePairs)
                 {
-                    var hash = data.Get<IHash>().SingleOrDefault(h => h.Key == key && h.Field == local.Key);
-                    if (hash == null)
+                    var local = kvp;
+
+                    QueueCommand(connection =>
                     {
-                        hash = data.CreateNew<IHash>();
+                        var hash = connection.Get<IHash>().SingleOrDefault(h => h.Key == key && h.Field == local.Key);
+                        if (hash == null)
+                        {
+                            hash = connection.CreateNew<IHash>();
 
-                        hash.Id = Guid.NewGuid();
-                        hash.Key = key;
-                        hash.Field = local.Key;
-                    }
+                            hash.Id = Guid.NewGuid();
+                            hash.Key = key;
+                            hash.Field = local.Key;
+                        }
 
-                    hash.Value = local.Value;
+                        hash.Value = local.Value;
 
-                    data.AddOrUpdate(hash);
-                });
+                        connection.AddOrUpdate(hash);
+                    });
+                }
             }
         }
 

@@ -10,8 +10,8 @@ namespace Hangfire.CompositeC1.Types
     [DataScope(DataScopeIdentifier.PublicName)]
     [DataAncestorProvider(typeof(NoAncestorDataAncestorProvider))]
     [ImmutableTypeId("f776567f-b23a-416d-80f6-2aa723c328fb")]
-    [Title("Job queue")]
-    [KeyPropertyName("Id")]
+    [Title("Queued job")]
+    [KeyPropertyName(nameof(Id))]
     public interface IJobQueue : IData
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]

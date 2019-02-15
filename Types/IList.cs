@@ -6,7 +6,7 @@ namespace Hangfire.CompositeC1.Types
 {
     [ImmutableTypeId("c741c3fc-749a-4962-bea4-e9ae9a5ecda0")]
     [Title("List")]
-    [KeyPropertyName("Id")]
+    [KeyPropertyName(nameof(Id))]
     public interface IList : IExpirable
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]

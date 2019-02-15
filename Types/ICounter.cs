@@ -10,7 +10,7 @@ namespace Hangfire.CompositeC1.Types
     [DataAncestorProvider(typeof(NoAncestorDataAncestorProvider))]
     [ImmutableTypeId("b3503da3-006d-4965-82be-1553b31e2ed5")]
     [Title("Counter")]
-    [KeyPropertyName("Id")]
+    [KeyPropertyName(nameof(Id))]
     public interface ICounter : IExpirable
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]

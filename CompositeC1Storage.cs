@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 
 using Composite.Data;
@@ -12,33 +13,49 @@ namespace Hangfire.CompositeC1
 {
     public class CompositeC1Storage : JobStorage
     {
-        private readonly CompositeC1StorageOptions _options;
+        public CompositeC1StorageOptions Options { get; }
 
         public CompositeC1Storage() : this(new CompositeC1StorageOptions()) { }
 
         public CompositeC1Storage(CompositeC1StorageOptions options)
         {
-            _options = options;
+            Options = options;
 
             EnsureDataTypes();
         }
 
         public override IStorageConnection GetConnection()
         {
-            return new CompositeC1Connection(_options.QueuePollInterval);
+            return new CompositeC1Connection(this);
+        }
+
+        public void UseConnection(Action<CompositeC1Connection> action)
+        {
+            using (var data = (CompositeC1Connection)GetConnection())
+            {
+                action(data);
+            }
+        }
+
+        public T UseConnection<T>(Func<CompositeC1Connection, T> func)
+        {
+            using (var data = (CompositeC1Connection)GetConnection())
+            {
+                return func(data);
+            }
         }
 
         public override IMonitoringApi GetMonitoringApi()
         {
-            return new CompositeC1MonitoringApi(this, _options.DashboardJobListLimit);
+            return new CompositeC1MonitoringApi(this);
         }
 
         public override IEnumerable<IServerComponent> GetComponents()
         {
             return new IServerComponent[]
             {
-                new ExpirationManager(this, _options.JobExpirationCheckInterval),
-                new CountersAggregator(this, _options.CountersAggregateInterval)
+                new ExpirationManager(this, Options.JobExpirationCheckInterval),
+                new CountersAggregator(this, Options.CountersAggregateInterval)
             };
         }
 
@@ -46,12 +63,12 @@ namespace Hangfire.CompositeC1
         {
             logger.Info("Using the following options for Composite C1 job storage:");
 
-            logger.InfoFormat("    Job expiration check interval: {0}.", _options.JobExpirationCheckInterval);
-            logger.InfoFormat("    Counters aggregate interval: {0}.", _options.CountersAggregateInterval);
+            logger.InfoFormat("    Job expiration check interval: {0}.", Options.JobExpirationCheckInterval);
+            logger.InfoFormat("    Counters aggregate interval: {0}.", Options.CountersAggregateInterval);
 
-            if (_options.DashboardJobListLimit.HasValue)
+            if (Options.DashboardJobListLimit.HasValue)
             {
-                logger.InfoFormat("    Dashboard Joblist limit: {0}.", _options.DashboardJobListLimit.Value);
+                logger.InfoFormat("    Dashboard Joblist limit: {0}.", Options.DashboardJobListLimit.Value);
             }
 
             base.WriteOptionsToLog(logger);

@@ -16,12 +16,17 @@ namespace Hangfire.CompositeC1
         {
             Verify.ArgumentNotNullOrEmpty(resource, "resource");
 
-            if (timeout.TotalSeconds > Int32.MaxValue)
+            if (timeout.TotalSeconds > int.MaxValue)
             {
-                throw new ArgumentException("The timeout specified is greater than Int32.MaxValue when expressed as seconds.", "timeout");
+                throw new ArgumentException($"The timeout specified is too large. Please supply a timeout equal to or less than {int.MaxValue} seconds", nameof(timeout));
             }
 
-            _lock = Locks.GetOrAdd(resource, new object());
+            if (timeout.TotalMilliseconds > int.MaxValue)
+            {
+                throw new ArgumentException($"The timeout specified is too large. Please supply a timeout equal to or less than {(int)TimeSpan.FromMilliseconds(int.MaxValue).TotalSeconds} seconds", nameof(timeout));
+            }
+
+            _lock = Locks.GetOrAdd(resource, s => new object());
 
             Monitor.TryEnter(_lock, timeout);
         }

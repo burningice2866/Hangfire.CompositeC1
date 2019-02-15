@@ -21,11 +21,11 @@ namespace Hangfire.CompositeC1
         private readonly QueueApi _queueApi;
         private readonly int? _jobListLimit;
 
-        public CompositeC1MonitoringApi(CompositeC1Storage storage, int? jobListLimit)
+        public CompositeC1MonitoringApi(CompositeC1Storage storage)
         {
             _storage = storage;
             _queueApi = new QueueApi(_storage);
-            _jobListLimit = jobListLimit;
+            _jobListLimit = storage.Options.DashboardJobListLimit;
         }
 
         public JobList<DeletedJobDto> DeletedJobs(int from, int count)
@@ -34,7 +34,7 @@ namespace Hangfire.CompositeC1
                 (jsonJob, job, stateData) => new DeletedJobDto
                 {
                     Job = job,
-                    DeletedAt = JobHelper.DeserializeNullableDateTime(stateData["DeletedAt"])
+                    DeletedAt = JobHelper.DeserializeNullableDateTime(stateData.ContainsKey("DeletedAt") ? stateData["DeletedAt"] : null)
                 });
         }
 
@@ -45,10 +45,10 @@ namespace Hangfire.CompositeC1
 
         public long EnqueuedCount(string queue)
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                return data.Get<IJobQueue>().Count(q => q.Queue == queue && !q.FetchedAt.HasValue);
-            }
+                return connection.Get<IJobQueue>().Count(q => q.Queue == queue && !q.FetchedAt.HasValue);
+            });
         }
 
         public JobList<EnqueuedJobDto> EnqueuedJobs(string queue, int from, int perPage)
@@ -85,10 +85,10 @@ namespace Hangfire.CompositeC1
 
         public long FetchedCount(string queue)
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                return data.Get<IJobQueue>().Count(q => q.Queue == queue && q.FetchedAt.HasValue);
-            }
+                return connection.Get<IJobQueue>().Count(q => q.Queue == queue && q.FetchedAt.HasValue);
+            });
         }
 
         public JobList<FetchedJobDto> FetchedJobs(string queue, int from, int perPage)
@@ -100,38 +100,38 @@ namespace Hangfire.CompositeC1
 
         public StatisticsDto GetStatistics()
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var states = (from job in data.Get<IJob>()
+                var states = (from job in connection.Get<IJob>()
                               where job.StateName != null
                               group job by job.StateName).ToDictionary(j => j.Key, j => j.Count());
 
-                Func<string, int> getCountIfExists = name => states.ContainsKey(name) ? states[name] : 0;
+                var succeeded = connection.GetCombinedCounter("stats:succeeded");
+                var deleted = connection.GetCombinedCounter("stats:deleted");
 
-                var succeded = data.GetCombinedCounter("stats:succeeded");
-                var deleted = data.GetCombinedCounter("stats:deleted");
-
-                var recurringJobs = data.Get<ISet>().Count(c => c.Key == "recurring-jobs");
-                var servers = data.Get<IServer>().Count();
+                var recurringJobs = connection.Get<ISet>().Count(c => c.Key == "recurring-jobs");
+                var servers = connection.Get<IServer>().Count();
 
                 var stats = new StatisticsDto
                 {
-                    Enqueued = getCountIfExists(EnqueuedState.StateName),
-                    Failed = getCountIfExists(FailedState.StateName),
-                    Processing = getCountIfExists(ProcessingState.StateName),
-                    Scheduled = getCountIfExists(ScheduledState.StateName),
+                    Enqueued = GetCountIfExists(EnqueuedState.StateName),
+                    Failed = GetCountIfExists(FailedState.StateName),
+                    Processing = GetCountIfExists(ProcessingState.StateName),
+                    Scheduled = GetCountIfExists(ScheduledState.StateName),
 
                     Servers = servers,
 
-                    Succeeded = succeded ?? 0,
+                    Succeeded = succeeded ?? 0,
                     Deleted = deleted ?? 0,
                     Recurring = recurringJobs,
 
                     Queues = _queueApi.GetQueues().Count()
                 };
 
+                int GetCountIfExists(string name) => states.ContainsKey(name) ? states[name] : 0;
+
                 return stats;
-            }
+            });
         }
 
         public IDictionary<DateTime, long> HourlyFailedJobs()
@@ -146,32 +146,34 @@ namespace Hangfire.CompositeC1
 
         public JobDetailsDto JobDetails(string jobId)
         {
-            Verify.ArgumentNotNull(jobId, "jobId");
+            Verify.ArgumentNotNull(jobId, nameof(jobId));
 
-            Guid id;
-            if (!Guid.TryParse(jobId, out id))
+            if (!Guid.TryParse(jobId, out var id))
             {
                 return null;
             }
 
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var job = data.Get<IJob>().SingleOrDefault(j => j.Id == id);
+                var job = connection.Get<IJob>().SingleOrDefault(j => j.Id == id);
                 if (job == null)
                 {
                     return null;
                 }
 
-                var jobParameters = data.Get<IJobParameter>().Where(p => p.Id == id).ToDictionary(p => p.Name, p => p.Value);
+                var jobParameters = connection.Get<IJobParameter>().Where(p => p.Id == id)
+                    .ToDictionary(p => p.Name, p => p.Value);
 
-                var history = (from state in data.Get<IState>()
+                var history = (from state in connection.Get<IState>()
                                where state.JobId == id
                                select new StateHistoryDto
                                {
                                    StateName = state.Name,
                                    CreatedAt = state.CreatedAt,
                                    Reason = state.Reason,
-                                   Data = new Dictionary<string, string>(JobHelper.FromJson<Dictionary<string, string>>(state.Data), StringComparer.OrdinalIgnoreCase)
+                                   Data = new Dictionary<string, string>(
+                                       JobHelper.FromJson<Dictionary<string, string>>(state.Data),
+                                       StringComparer.OrdinalIgnoreCase)
                                }).ToList();
 
                 return new JobDetailsDto
@@ -182,7 +184,7 @@ namespace Hangfire.CompositeC1
                     History = history,
                     Properties = jobParameters
                 };
-            }
+            });
         }
 
         public long ProcessingCount()
@@ -204,10 +206,10 @@ namespace Hangfire.CompositeC1
 
         public IList<QueueWithTopEnqueuedJobsDto> Queues()
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var queuesData = data.Get<IJobQueue>().ToList();
-                var queues = queuesData.GroupBy(q => q.Queue).ToDictionary(q => q.Key, q => q.Count());
+                var queuedJobs = connection.Get<IJobQueue>().ToList();
+                var queues = queuedJobs.GroupBy(q => q.Queue).ToDictionary(q => q.Key, q => q.Count());
 
                 var query = from kvp in queues
                             let enqueuedJobIds = _queueApi.GetEnqueuedJobIds(kvp.Key, 0, 5).ToArray()
@@ -221,7 +223,7 @@ namespace Hangfire.CompositeC1
                             };
 
                 return query.ToList();
-            }
+            });
         }
 
         public long ScheduledCount()
@@ -243,9 +245,9 @@ namespace Hangfire.CompositeC1
 
         public IList<ServerDto> Servers()
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var servers = data.Get<IServer>().ToList();
+                var servers = connection.Get<IServer>().ToList();
 
                 var query = from server in servers
                             let serverData = JobHelper.FromJson<ServerData>(server.Data)
@@ -259,7 +261,7 @@ namespace Hangfire.CompositeC1
                             };
 
                 return query.ToList();
-            }
+            });
         }
 
         public IDictionary<DateTime, long> SucceededByDatesCount()
@@ -299,7 +301,7 @@ namespace Hangfire.CompositeC1
                 endDate = endDate.AddHours(-1);
             }
 
-            var keyMap = dates.ToDictionary(x => String.Format("stats:{0}:{1}", type, x.ToString("yyyy-MM-dd-HH")), x => x);
+            var keyMap = dates.ToDictionary(x => $"stats:{type}:{x:yyyy-MM-dd-HH}", x => x);
 
             return GetTimelineStats(keyMap);
         }
@@ -316,23 +318,21 @@ namespace Hangfire.CompositeC1
                 endDate = endDate.AddDays(-1);
             }
 
-            var keyMap = dates.ToDictionary(x => String.Format("stats:{0}:{1}", type, x.ToString("yyyy-MM-dd")), x => x);
+            var keyMap = dates.ToDictionary(x => $"stats:{type}:{x:yyyy-MM-dd}", x => x);
 
             return GetTimelineStats(keyMap);
         }
 
         private Dictionary<DateTime, long> GetTimelineStats(IDictionary<string, DateTime> keyMap)
         {
-            IDictionary<string, long> valuesMap;
-
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            var valuesMap = _storage.UseConnection(connection =>
             {
-                var counters = data.Get<IAggregatedCounter>().ToList();
+                var counters = connection.Get<IAggregatedCounter>().ToList();
 
-                valuesMap = (from c in counters
-                             where keyMap.ContainsKey(c.Key)
-                             select c).ToDictionary(o => o.Key, o => o.Value);
-            }
+                return (from c in counters
+                        where keyMap.ContainsKey(c.Key)
+                        select c).ToDictionary(o => o.Key, o => o.Value);
+            });
 
             foreach (var key in keyMap.Keys.Where(key => !valuesMap.ContainsKey(key)))
             {
@@ -344,10 +344,10 @@ namespace Hangfire.CompositeC1
 
         private JobList<FetchedJobDto> FetchedJobs(IEnumerable<Guid> jobIds)
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var query = from j in data.Get<IJob>()
-                            join s in data.Get<IState>() on j.StateId equals s.Id
+                var query = from j in connection.Get<IJob>()
+                            join s in connection.Get<IState>() on j.StateId equals s.Id
                             where jobIds.Contains(j.Id)
                             let job = new JsonJob
                             {
@@ -367,15 +367,15 @@ namespace Hangfire.CompositeC1
                             });
 
                 return new JobList<FetchedJobDto>(query);
-            }
+            });
         }
 
         private JobList<EnqueuedJobDto> EnqueuedJobs(Guid[] jobIds)
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var jobs = (from job in data.Get<IJob>()
-                            join state in data.Get<IState>() on job.StateId equals state.Id
+                var jobs = (from job in connection.Get<IJob>()
+                            join state in connection.Get<IState>() on job.StateId equals state.Id
                             where jobIds.Contains(job.Id)
                             select new JsonJob
                             {
@@ -389,18 +389,19 @@ namespace Hangfire.CompositeC1
                                 StateName = job.StateName
                             }).ToDictionary(job => job.Id, job => job);
 
-                var sortedJsonJobs = jobIds.Select(jobId => jobs.ContainsKey(jobId) ? jobs[jobId] : new JsonJob { Id = jobId }).ToList();
+                var sortedJsonJobs = jobIds
+                    .Select(jobId => jobs.ContainsKey(jobId) ? jobs[jobId] : new JsonJob { Id = jobId }).ToList();
 
                 return DeserializeJobs(sortedJsonJobs,
                     (jsonJob, job, stateData) => new EnqueuedJobDto
-                {
-                    Job = job,
-                    State = jsonJob.StateName,
-                    EnqueuedAt = jsonJob.StateName == EnqueuedState.StateName
-                        ? JobHelper.DeserializeNullableDateTime(stateData["EnqueuedAt"])
-                        : null
-                });
-            }
+                    {
+                        Job = job,
+                        State = jsonJob.StateName,
+                        EnqueuedAt = jsonJob.StateName == EnqueuedState.StateName
+                            ? JobHelper.DeserializeNullableDateTime(stateData["EnqueuedAt"])
+                            : null
+                    });
+            });
         }
 
         private JobList<TDto> GetJobs<TDto>(
@@ -409,10 +410,10 @@ namespace Hangfire.CompositeC1
             string stateName,
             Func<JsonJob, Job, Dictionary<string, string>, TDto> selector)
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var query = (from job in data.Get<IJob>()
-                             join state in data.Get<IState>() on job.StateId equals state.Id
+                var query = (from job in connection.Get<IJob>()
+                             join state in connection.Get<IState>() on job.StateId equals state.Id
                              where job.StateName == stateName
                              orderby job.CreatedAt descending
                              select new JsonJob
@@ -427,7 +428,7 @@ namespace Hangfire.CompositeC1
                              }).Skip(from).Take(count).ToList();
 
                 return DeserializeJobs(query, selector);
-            }
+            });
         }
 
         private static JobList<TDto> DeserializeJobs<TDto>(
@@ -474,9 +475,9 @@ namespace Hangfire.CompositeC1
 
         private long GetNumberOfJobsByStateName(string stateName)
         {
-            using (var data = (CompositeC1Connection)_storage.GetConnection())
+            return _storage.UseConnection(connection =>
             {
-                var query = data.Get<IJob>().Where(j => j.StateName == stateName);
+                var query = connection.Get<IJob>().Where(j => j.StateName == stateName);
 
                 if (_jobListLimit.HasValue)
                 {
@@ -484,7 +485,7 @@ namespace Hangfire.CompositeC1
                 }
 
                 return query.Count();
-            }
+            });
         }
     }
 }

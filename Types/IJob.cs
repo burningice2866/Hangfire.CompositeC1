@@ -6,7 +6,7 @@ namespace Hangfire.CompositeC1.Types
 {
     [ImmutableTypeId("9d87193f-6ae6-4bfb-9aec-fbc0506bd5c1")]
     [Title("Job")]
-    [KeyPropertyName("Id")]
+    [KeyPropertyName(nameof(Id))]
     public interface IJob : IExpirable
     {
         [StoreFieldType(PhysicalStoreFieldType.Guid)]
